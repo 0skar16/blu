@@ -83,7 +83,6 @@ fn parse_statement(code: &str) -> IResult<&str, Statement> {
     let code = skip_comment(code);
     let (code, statement) = pss!(alt((
             parse_func,
-            
             parse_op,
             parse_table,
             parse_index,
@@ -92,7 +91,6 @@ fn parse_statement(code: &str) -> IResult<&str, Statement> {
             parse_paren,
             parse_nil,
             parse_literal,
-            
             parse_child,
             parse_get,
     )))(code)?;
@@ -400,6 +398,7 @@ fn parse_literal(code: &str) -> IResult<&str, Statement> {
 }
 fn parse_assignment(code: &str) -> IResult<&str, Statement> {
     let (code, target) = pss!(alt((
+        parse_index,
         parse_child,
         parse_get
     )))(code)?;

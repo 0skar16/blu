@@ -1,11 +1,13 @@
 #![feature(fs_try_exists)]
+#![feature(let_chains)]
 #![feature(path_file_prefix)]
-use std::{path::PathBuf, env::current_dir, process::Command};
+use std::{path::PathBuf, env::{current_dir, set_current_dir}, process::Command};
 use anyhow::{Result, bail};
 use blu::parser::parse_blu;
 use clap::{Parser, Subcommand, Args};
 use colored::Colorize;
 use serde::{Serialize, Deserialize};
+use walkdir::WalkDir;
 #[derive(Parser, Debug)]
 #[command(author, version, about="A compiler for the Blu language", long_about = None)]
 struct Cli {
@@ -34,6 +36,13 @@ struct CompileArgs {
     output: String,
 }
 fn main() -> Result<()> {
+    let blu_home = if let Some(home) = home::home_dir() {
+        let blu = home.join(".blu");
+        std::fs::create_dir_all(blu.join("modules"))?;
+        Some(blu)
+    }else{
+        None
+    };
     let cli = Cli::try_parse()?;
     match cli.command {
         Commands::Compile(CompileArgs { input, output }) => {
@@ -67,27 +76,44 @@ fn main() -> Result<()> {
             if !std::fs::try_exists(dir.join("blu.yml"))? {
                 bail!("Blu manifest isn't in the current directory!");
             }
+            let _ = std::fs::remove_dir_all(dir.join("target"));
+            std::fs::create_dir_all(dir.join("target"))?;
             let manifest: BluManifest = serde_yaml::from_reader(std::fs::File::open(dir.join("blu.yml"))?)?;
+            set_current_dir(dir.join("target"))?;
             for cmd in manifest.pre_compile {
                 let _cmd = Command::new("usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
             }
-            let _ = std::fs::remove_dir_all(dir.join("target"));
-            std::fs::create_dir_all(dir.join("target"))?;
 
-            for src in glob::glob("src/*.blu")? {
-                if let Ok(path) = src {
-                    let filename = if let Some(str) = path.file_name() {
-                        str.to_string_lossy().to_string()
-                    }else {
-                        "N/A".to_string()
+            build_dir(dir.join("src"), dir.join("target"))?;
+            if manifest.include.len() > 0 {
+                set_current_dir(&dir)?;
+                std::fs::create_dir_all(dir.join("target").join("modules"))?;
+                for include in manifest.include {
+                    let path = if let Some(path) = include.path && let Ok(exists) = std::fs::try_exists(path.join("blu.yml")) && exists {
+                        Some(path)
+                    }else if let Some(ref blu_home) = blu_home && let Ok(exists) = std::fs::try_exists(blu_home.join(&include.name).join("blu.yml")) && exists {
+                        Some(blu_home.join(&include.name))
+                    } else {
+                        None
                     };
-                    let src = std::fs::read_to_string(&path)?;
-                    let ast = parse_blu(&src, filename)?;
-                    let compiled = blu::compiler::compile(ast);
-                    std::fs::write(path.to_string_lossy().to_string().replace("src", "target").replace(".blu", ".lua"), compiled)?;
-
+                    if let Some(path) = path {
+                        let mod_manifest: BluManifest = serde_yaml::from_reader(std::fs::File::open(path.join("blu.yml"))?)?;
+                        std::fs::create_dir_all(dir.join("target").join("modules").join(&mod_manifest.name))?;
+                        set_current_dir(dir.join("target").join("modules").join(&mod_manifest.name))?;
+                        for cmd in mod_manifest.pre_compile {
+                            let _cmd = Command::new("usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                        }
+                        set_current_dir(&dir)?;
+                        build_dir(path.join("src"), dir.join("target").join("modules").join(&mod_manifest.name))?;
+                        for cmd in mod_manifest.post_compile {
+                            let _cmd = Command::new("usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                        }
+                    }else{
+                        bail!("Couldn't locate the path for module {}", include.name);
+                    }
                 }
             }
+            set_current_dir(dir.join("target"))?;
             for cmd in manifest.post_compile {
                 let _cmd = Command::new("usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
             }
@@ -101,7 +127,7 @@ fn main() -> Result<()> {
             std::fs::create_dir_all(dir.join("src"))?;
             std::fs::create_dir_all(dir.join("target"))?;
             std::fs::write(dir.join("blu.yml"), format!(include_str!("default_blu.yml"), filename))?;
-            std::fs::write(dir.join("src/main.blu"), "print(\"Hello world!\");")?;
+            std::fs::write(dir.join("src/init.blu"), "print(\"Hello world!\");")?;
         },
     }
     Ok(())
@@ -110,7 +136,7 @@ fn main() -> Result<()> {
 struct BluManifest {
     name: String,
     authors: Vec<String>,
-    include: Vec<String>,
+    include: Vec<Inclusion>,
     compile: BuildType,
     pre_compile: Vec<String>,
     post_compile: Vec<String>
@@ -119,4 +145,31 @@ struct BluManifest {
 pub enum BuildType {
     #[serde(rename = "tree")]
     Tree
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Inclusion {
+    name: String,
+    path: Option<PathBuf>,
+}
+fn build_dir(dir: PathBuf, out: PathBuf) -> Result<()> {
+    let root = dir.to_string_lossy().to_string();
+    let new_root = out.to_string_lossy().to_string();
+    for src in WalkDir::new(dir).into_iter() {
+        if let Ok(path) = src && path.metadata()?.is_file() {
+            let path = path.into_path();
+            let filename = if let Some(str) = path.file_name() {
+                str.to_string_lossy().to_string()
+            }else {
+                "N/A".to_string()
+            };
+            let src = std::fs::read_to_string(&path)?;
+            let ast = parse_blu(&src, filename)?;
+            let compiled = blu::compiler::compile(ast);
+            dbg!(&path);
+            let new_path = path.to_string_lossy().to_string().replace(&root, &new_root).replace(".blu", ".lua");
+            dbg!(&new_path);
+            std::fs::write(new_path, compiled)?;
+        }
+    }
+    Ok(())
 }

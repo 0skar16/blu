@@ -1,0 +1,9 @@
+name: inclusion
+authors: []
+version: 0.1.0
+include:
+  - name: project
+    path: ../project
+compile: tree
+pre_compile: []
+post_compile: []

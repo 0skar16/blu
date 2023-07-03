@@ -165,9 +165,7 @@ fn build_dir(dir: PathBuf, out: PathBuf) -> Result<()> {
             let src = std::fs::read_to_string(&path)?;
             let ast = parse_blu(&src, filename)?;
             let compiled = blu::compiler::compile(ast);
-            dbg!(&path);
             let new_path = path.to_string_lossy().to_string().replace(&root, &new_root).replace(".blu", ".lua");
-            dbg!(&new_path);
             std::fs::write(new_path, compiled)?;
         }
     }

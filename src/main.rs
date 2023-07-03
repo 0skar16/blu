@@ -1,7 +1,7 @@
 #![feature(fs_try_exists)]
 #![feature(let_chains)]
 #![feature(path_file_prefix)]
-use std::{path::PathBuf, env::{current_dir, set_current_dir}, process::Command};
+use std::{path::PathBuf, env::{current_dir, set_current_dir}, process::{Command, exit}};
 use anyhow::{Result, bail};
 use blu::parser::parse_blu;
 use clap::{Parser, Subcommand, Args};
@@ -81,7 +81,12 @@ fn main() -> Result<()> {
             let manifest: BluManifest = serde_yaml::from_reader(std::fs::File::open(dir.join("blu.yml"))?)?;
             set_current_dir(dir.join("target"))?;
             for cmd in manifest.pre_compile {
-                let _cmd = Command::new("usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                let out = Command::new("/usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                let str = std::str::from_utf8(&out.stderr);
+                if !out.status.success() {
+                    eprintln!("{}: Pre compile command `{}` in [{}] erorred!\n\t{}", "error".red().bold(), cmd, manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t"));
+                }
+                exit(1);
             }
 
             build_dir(dir.join("src"), dir.join("target"))?;
@@ -101,12 +106,22 @@ fn main() -> Result<()> {
                         std::fs::create_dir_all(dir.join("target").join("modules").join(&mod_manifest.name))?;
                         set_current_dir(dir.join("target").join("modules").join(&mod_manifest.name))?;
                         for cmd in mod_manifest.pre_compile {
-                            let _cmd = Command::new("usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                            let out = Command::new("/usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                            let str = std::str::from_utf8(&out.stderr);
+                            if !out.status.success() {
+                                eprintln!("{}: Pre compile command `{}` in [{}] erorred!\n\t{}", "error".red().bold(), cmd, mod_manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t"));
+                            }
+                            exit(1);
                         }
                         set_current_dir(&dir)?;
                         build_dir(path.join("src"), dir.join("target").join("modules").join(&mod_manifest.name))?;
                         for cmd in mod_manifest.post_compile {
-                            let _cmd = Command::new("usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                            let out = Command::new("/usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                            let str = std::str::from_utf8(&out.stderr);
+                            if !out.status.success() {
+                                eprintln!("{}: Post compile command `{}` in [{}] erorred!\n\t{}", "error".red().bold(), cmd, mod_manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t"));
+                            }
+                            exit(1);
                         }
                     }else{
                         bail!("Couldn't locate the path for module {}", include.name);
@@ -115,7 +130,12 @@ fn main() -> Result<()> {
             }
             set_current_dir(dir.join("target"))?;
             for cmd in manifest.post_compile {
-                let _cmd = Command::new("usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                let out = Command::new("/usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                let str = std::str::from_utf8(&out.stderr);
+                if !out.status.success() {
+                    eprintln!("{}: Post compile command `{}` in [{}] erorred!\n\t{}", "error".red().bold(), cmd, manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t"));
+                }
+                exit(1);
             }
         },
         Commands::Init {} => {

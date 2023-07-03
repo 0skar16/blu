@@ -162,10 +162,15 @@ fn build_dir(dir: PathBuf, out: PathBuf) -> Result<()> {
             }else {
                 "N/A".to_string()
             };
+            let new_path = path.to_string_lossy().to_string().replace(&root, &new_root).replace(".blu", ".lua");
+            let ext = path.extension();
+            if ext.is_none() || ext.unwrap().to_str() != Some("blu") {
+                std::fs::copy(path, new_path)?;
+                continue;
+            }
             let src = std::fs::read_to_string(&path)?;
             let ast = parse_blu(&src, filename)?;
             let compiled = blu::compiler::compile(ast);
-            let new_path = path.to_string_lossy().to_string().replace(&root, &new_root).replace(".blu", ".lua");
             std::fs::write(new_path, compiled)?;
         }
     }

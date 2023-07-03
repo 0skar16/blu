@@ -100,7 +100,10 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
             buf.push_str(&format!("return {}\n", to_lua(*ret, ind, false)));
         },
         Statement::Table(entries) => {
-            buf.push_str("{\n");
+            buf.push_str("{");
+            if entries.len() > 0 {
+                buf.push('\n');
+            }
             let len = entries.len();
             let mut i = 0;
             for entry in entries {

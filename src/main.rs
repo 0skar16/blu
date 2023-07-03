@@ -96,8 +96,8 @@ fn main() -> Result<()> {
                 for include in manifest.include {
                     let path = if let Some(path) = include.path && let Ok(exists) = std::fs::try_exists(path.join("blu.yml")) && exists {
                         Some(path)
-                    }else if let Some(ref blu_home) = blu_home && let Ok(exists) = std::fs::try_exists(blu_home.join(&include.name).join("blu.yml")) && exists {
-                        Some(blu_home.join(&include.name))
+                    }else if let Some(ref blu_home) = blu_home && let Ok(exists) = std::fs::try_exists(blu_home.join(&include.name.replace(".", "/")).join("blu.yml")) && exists {
+                        Some(blu_home.join(&include.name.replace(".", "/")))
                     } else {
                         None
                     };

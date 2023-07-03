@@ -7,6 +7,9 @@ authors = ["0skar16"]
 
 [dependencies]
 anyhow = "1"
-backtrace-on-stack-overflow = "0.3.0"
 clap = { version = "4.3", features = ["derive"] }
+colored = "2.0.0"
+glob = "0.3.1"
 nom = "7"
+serde = { version = "1.0.165", features = ["derive"] }
+serde_yaml = "0.9.22"

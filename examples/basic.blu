@@ -1,7 +1,104 @@
+// Function creating test
 fn test_function(arg) {
+    // Literals and locals
     let a = 1;
-    if(a > 0 && !false) {
-        print("Hello "..arg);
+    let b = true;
+    // Basic operations and if test
+    if(a > 0 && b && !false) {
+        // Assignment
+        a = 2;
+        // Calling
+        print(arg);
+    }else if (a < 0) {
+        print("A is smaller than 0");
+    }else{
+        print("A is 0");
+    }
+    // Get call test
+    print(a);
+    // Function object test
+    return fn() {
+        return a;
+    };
+}
+/*
+    Multi-line comment test!
+*/
+// Variable length arguments test
+fn variable_len_arg(arg1, ...) {
+    print(arg1);
+    for _,arg in arg {
+        print(arg);
     }
 }
-test_function("world!");
+// Calling a call inside a paren test
+let a = (test_function("hello ".."world!"))();
+// Table test and slice test
+let b = {
+    abc = "hey!",
+    "def" = "hello!",
+    "this is number 1",
+    5 = "this is number 5",
+    a = a,
+    d = [fn() {
+        variable_len_arg("This is arg 1", "This is arg 2", "This is arg 3");
+        return "Hello world!";
+    }]
+};
+// Calling an index of a child inside a param
+let c = (b.d[1])();
+// Testing the contents
+print(c);
+// GLOBALS!
+global d = 5;
+global c;
+// Set a child
+b.d = d;
+// For with a step
+for i in 5..1,-1 {
+    print(i);
+}
+// For without a step
+for i in 0..5 {
+    print(i);
+}
+// Index-less tables for for testing!
+let fortest = {
+    9,
+    10,
+    54,
+    235,
+    2352,
+    24,
+    13,
+    "hello world!"
+};
+// Auto-iterator test
+for k,v in fortest {
+    print(k, v);
+}
+// Iterator test
+for k,v iter pairs(fortest) {
+    print(k, v);
+}
+// Whiles!
+let i = 0;
+while(i < 10) {
+    print(i);
+    if(i == 7){
+        break;
+    }
+    i = i + 1;
+}
+// Repeats?
+i = 0;
+loop {
+    print(i);
+    i = i + 1;
+} until(i == 10)
+
+// Methods?
+fn b:test_method() {
+    print("This is a method!");
+}
+b:test_method();

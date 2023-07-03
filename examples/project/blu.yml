@@ -1,0 +1,7 @@
+name: project
+authors: ["0skar16"]
+version: 0.1.0
+include: []
+compile: tree
+pre_compile: []
+post_compile: []

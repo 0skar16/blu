@@ -1,8 +1,11 @@
-use std::path::PathBuf;
-
-use anyhow::Result;
+#![feature(fs_try_exists)]
+#![feature(path_file_prefix)]
+use std::{path::PathBuf, env::current_dir};
+use anyhow::{Result, bail};
 use blu::parser::parse_blu;
 use clap::{Parser, Subcommand, Args};
+use colored::Colorize;
+use serde::{Serialize, Deserialize};
 #[derive(Parser, Debug)]
 #[command(author, version, about="A compiler for the Blu language", long_about = None)]
 struct Cli {
@@ -12,6 +15,15 @@ struct Cli {
 
 #[derive(Subcommand,Debug)]
 enum Commands {
+    New{
+        name: PathBuf,
+    },
+    Build{
+
+    },
+    Init{
+        
+    },
     Compile(CompileArgs),
 }
 
@@ -22,14 +34,81 @@ struct CompileArgs {
     output: String,
 }
 fn main() -> Result<()> {
-    //unsafe { backtrace_on_stack_overflow::enable() };
     let cli = Cli::try_parse()?;
     match cli.command {
         Commands::Compile(CompileArgs { input, output }) => {
-            let code = std::fs::read_to_string(input)?;
-            let ast = parse_blu(&code)?;
-            dbg!(ast);
+            let code = std::fs::read_to_string(&input)?;
+            let filename = if let Some(str) = input.file_name() {
+                str.to_string_lossy().to_string()
+            }else {
+                "N/A".to_string()
+            };
+            let ast = parse_blu(code.as_str(), filename)?;
+            let compiled = blu::compiler::compile(ast);
+            if output == "-" {
+                print!("{}", compiled);
+            }else{
+                std::fs::write(output, compiled)?;
+            }
+        },
+        Commands::New { name } => {
+            let mut filename = "unknown".to_string();
+            if let Some(str) = name.to_string_lossy().to_string().split("/").last() {
+                filename = str.to_string();
+            }
+            println!("{} new project, named: {}", "Creating".green().bold(), filename);
+            std::fs::create_dir_all(name.join("src"))?;
+            std::fs::create_dir_all(name.join("target"))?;
+            std::fs::write(name.join("blu.yml"), format!(include_str!("default_blu.yml"), filename))?;
+            std::fs::write(name.join("src/main.blu"), "print(\"Hello world!\");")?;
+        },
+        Commands::Build {  } => {
+            let dir = current_dir()?;
+            if !std::fs::try_exists(dir.join("blu.yml"))? {
+                bail!("Blu manifest isn't in the current directory!");
+            }
+            let _ = std::fs::remove_dir_all(dir.join("target"));
+            std::fs::create_dir_all(dir.join("target"))?;
+            for src in glob::glob("src/*.blu")? {
+                if let Ok(path) = src {
+                    let filename = if let Some(str) = path.file_name() {
+                        str.to_string_lossy().to_string()
+                    }else {
+                        "N/A".to_string()
+                    };
+                    let src = std::fs::read_to_string(&path)?;
+                    let ast = parse_blu(&src, filename)?;
+                    let compiled = blu::compiler::compile(ast);
+                    std::fs::write(path.to_string_lossy().to_string().replace("src", "target").replace(".blu", ".lua"), compiled)?;
+
+                }
+            }
+        },
+        Commands::Init {} => {
+            let dir = current_dir()?;
+            let mut filename = "unknown".to_string();
+            if let Some(str) = dir.to_string_lossy().to_string().split("/").last() {
+                filename = str.to_string();
+            }
+            std::fs::create_dir_all(dir.join("src"))?;
+            std::fs::create_dir_all(dir.join("target"))?;
+            std::fs::write(dir.join("blu.yml"), format!(include_str!("default_blu.yml"), filename))?;
+            std::fs::write(dir.join("src/main.blu"), "print(\"Hello world!\");")?;
         },
     }
     Ok(())
+}
+#[derive(Debug, Serialize, Deserialize)]
+struct BluManifest {
+    name: String,
+    authors: Vec<String>,
+    include: Vec<String>,
+    compile: BuildType,
+    pre_compile: Vec<String>,
+    post_compile: Vec<String>
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub enum BuildType {
+    #[serde(rename = "tree")]
+    Tree
 }

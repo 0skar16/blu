@@ -6,35 +6,48 @@ pub struct AST {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Call(Box<Statement>, Vec<Statement>),
+    Call(Box<Statement>, Vec<Statement>, bool),
     Get(String),
-    Child(Box<Statement>, String),
+    Child(Box<Statement>, Box<Statement>),
+    Method(Box<Statement>, String),
     Let(String, Option<Box<Statement>>),
-    Global(String, Box<Statement>),
-    Assignment(String, Box<Statement>),
-    Operation(Box<Statement>, Operation, Box<Statement>),
-    Comment(String),
+    Global(String, Option<Box<Statement>>),
+    Assignment(Box<Statement>, Box<Statement>),
+    Operation(Box<Statement>, Operation, Option<Box<Statement>>),
+    Comment(CommentType, String),
     Literal(Literal),
     Return(Box<Statement>),
     Table(Vec<TableEntry>),
-    Function(String, Vec<String>, Block),
+    Function(Option<String>, Vec<String>, Block, bool),
     For(BluIterator, Block),
     While(Box<Statement>, Block),
+    Loop(Box<Statement>, Block),
     If(Box<Statement>, Block, Vec<(Statement, Block)>, Option<Block>),
     Paren(Box<Statement>),
     Index(Box<Statement>, Box<Statement>),
+    LoopOperation(LoopOp),
     Nil,
+}
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LoopOp {
+    Break,
+    Continue,
+}
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CommentType {
+    SingleLine,
+    MultiLine
 }
 #[derive(Debug, Clone)]
 pub enum TableEntry {
-    IndexLess(Box<Statement>),
-    IdentIndex(String, Box<Statement>),
-    NumericIndex(i128),
+    IndexLess(Statement),
+    IdentIndex(String, Statement),
+    LiteralIndex(Statement, Statement),
 }
 #[derive(Debug, Clone)]
 pub struct Block(pub Vec<Statement>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Operation {
     Add,
     Sub,
@@ -63,6 +76,7 @@ pub enum Literal {
 
 #[derive(Debug, Clone)]
 pub enum BluIterator {
-    Numerical(String, f64, f64),
+    Numerical(String, Box<Statement>, Box<Statement>, Option<Box<Statement>>),
     Each(Vec<String>, Box<Statement>),
+    Iterator(Vec<String>, Box<Statement>),
 }

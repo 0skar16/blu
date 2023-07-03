@@ -1,6 +1,6 @@
 #![feature(fs_try_exists)]
 #![feature(path_file_prefix)]
-use std::{path::PathBuf, env::current_dir};
+use std::{path::PathBuf, env::current_dir, process::Command};
 use anyhow::{Result, bail};
 use blu::parser::parse_blu;
 use clap::{Parser, Subcommand, Args};
@@ -67,8 +67,13 @@ fn main() -> Result<()> {
             if !std::fs::try_exists(dir.join("blu.yml"))? {
                 bail!("Blu manifest isn't in the current directory!");
             }
+            let manifest: BluManifest = serde_yaml::from_reader(std::fs::File::open(dir.join("blu.yml"))?)?;
+            for cmd in manifest.pre_compile {
+                let _cmd = Command::new("usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+            }
             let _ = std::fs::remove_dir_all(dir.join("target"));
             std::fs::create_dir_all(dir.join("target"))?;
+
             for src in glob::glob("src/*.blu")? {
                 if let Ok(path) = src {
                     let filename = if let Some(str) = path.file_name() {
@@ -82,6 +87,9 @@ fn main() -> Result<()> {
                     std::fs::write(path.to_string_lossy().to_string().replace("src", "target").replace(".blu", ".lua"), compiled)?;
 
                 }
+            }
+            for cmd in manifest.post_compile {
+                let _cmd = Command::new("usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
             }
         },
         Commands::Init {} => {

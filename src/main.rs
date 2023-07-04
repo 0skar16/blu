@@ -96,8 +96,8 @@ fn main() -> Result<()> {
                 for include in manifest.include {
                     let path = if let Some(path) = include.path && let Ok(exists) = std::fs::try_exists(path.join("blu.yml")) && exists {
                         Some(path)
-                    }else if let Some(ref blu_home) = blu_home && let Ok(exists) = std::fs::try_exists(blu_home.join(&include.name.replace(".", "/")).join("blu.yml")) && exists {
-                        Some(blu_home.join(&include.name.replace(".", "/")))
+                    }else if let Some(ref blu_home) = blu_home && let Ok(exists) = std::fs::try_exists(blu_home.join("modules").join(&include.name.replace(".", "/")).join("blu.yml")) && exists {
+                        Some(blu_home.join("modules").join(&include.name.replace(".", "/")))
                     } else {
                         None
                     };
@@ -183,6 +183,10 @@ fn build_dir(dir: PathBuf, out: PathBuf) -> Result<()> {
                 "N/A".to_string()
             };
             let new_path = path.to_string_lossy().to_string().replace(&root, &new_root).replace(".blu", ".lua");
+            let new_path = PathBuf::from(new_path);
+            if let Some(parent) = new_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
             let ext = path.extension();
             if ext.is_none() || ext.unwrap().to_str() != Some("blu") {
                 std::fs::copy(path, new_path)?;

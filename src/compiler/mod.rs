@@ -1,4 +1,4 @@
-use crate::parser::ast::{AST, Statement, Operation, TableEntry, BluIterator, LoopOp};
+use crate::parser::ast::{AST, Statement, Operation, TableIndex, BluIterator, LoopOp};
 
 pub fn compile(ast: AST) -> String {
     let mut buf = String::new();
@@ -97,7 +97,7 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
             })
         },
         Statement::Return(ret) => {
-            buf.push_str(&format!("return {}\n", to_lua(*ret, ind, false)));
+            buf.push_str(&format!("return {}\n", ret.into_iter().map(|s| to_lua(s, ind, false)).collect::<Vec<_>>().join(", ")));
         },
         Statement::Table(entries) => {
             buf.push_str("{");
@@ -106,25 +106,26 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
             }
             let len = entries.len();
             let mut i = 0;
-            for entry in entries {
-                match entry {
-                    TableEntry::IndexLess(stmt) => {
-                        buf.push_str(&to_lua(stmt, ind+1, true));
-                    },
-                    TableEntry::IdentIndex(name, stmt) => {
-                        buf.push_str(&"\t".repeat(ind as usize + 1));
+            for (index, entry) in entries {
+                buf.push_str(&"\t".repeat(ind as usize + 1));
+                match index {
+                    TableIndex::None => {},
+                    TableIndex::Ident(name) => {
                         buf.push_str(&name);
                         buf.push_str(" = ");
-                        buf.push_str(&to_lua(stmt, ind+1, false));
                     },
-                    TableEntry::LiteralIndex(index, stmt) => {
-                        buf.push_str(&"\t".repeat(ind as usize + 1));
+                    TableIndex::Literal(index) => {
+                        buf.push('[');
+                        buf.push_str(&to_lua(Statement::Literal(index), ind+1, false));
+                        buf.push_str("] = ");
+                    },
+                    TableIndex::Statement(index) => {
                         buf.push('[');
                         buf.push_str(&to_lua(index, ind+1, false));
                         buf.push_str("] = ");
-                        buf.push_str(&to_lua(stmt, ind+1, false));
                     },
                 }
+                buf.push_str(&to_lua(entry, ind+1, false));
                 i+=1;
                 if i != len {
                     buf.push(',');
@@ -138,7 +139,7 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
             buf.push_str("function");
             if let Some(name) = name {
                 buf.push_str(" ");
-                buf.push_str(&name);
+                buf.push_str(&to_lua(*name, ind+1, false));
             }
             buf.push('(');
             buf.push_str(&args.join(", "));

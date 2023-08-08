@@ -16,9 +16,9 @@ pub enum Statement {
     Operation(Box<Statement>, Operation, Option<Box<Statement>>),
     Comment(CommentType, String),
     Literal(Literal),
-    Return(Box<Statement>),
-    Table(Vec<TableEntry>),
-    Function(Option<String>, Vec<String>, Block, bool),
+    Return(Vec<Statement>),
+    Table(Vec<(TableIndex, Statement)>),
+    Function(Option<Box<Statement>>, Vec<String>, Block, bool),
     For(BluIterator, Block),
     While(Box<Statement>, Block),
     Loop(Box<Statement>, Block),
@@ -39,10 +39,11 @@ pub enum CommentType {
     MultiLine
 }
 #[derive(Debug, Clone)]
-pub enum TableEntry {
-    IndexLess(Statement),
-    IdentIndex(String, Statement),
-    LiteralIndex(Statement, Statement),
+pub enum TableIndex {
+    None,
+    Ident(String),
+    Literal(Literal),
+    Statement(Statement),
 }
 #[derive(Debug, Clone)]
 pub struct Block(pub Vec<Statement>);
@@ -79,4 +80,4 @@ pub enum BluIterator {
     Numerical(String, Box<Statement>, Box<Statement>, Option<Box<Statement>>),
     Each(Vec<String>, Box<Statement>),
     Iterator(Vec<String>, Box<Statement>),
-}
+} 

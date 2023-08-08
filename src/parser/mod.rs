@@ -1,534 +1,848 @@
+use crate::lexer::{Token, TokenKind, TokenKindDesc, Punctuation, Number};
 
-use std::process::exit;
-use std::sync::atomic::AtomicU8;
-
-use anyhow::{Result, bail};
-use colored::Colorize;
-use nom::bytes::complete::tag;
-use nom::character::is_digit;
-use nom::error::ErrorKind;
-use nom::{*, character::complete::char};
-use nom::branch::alt;
-use crate::{s, pss};
-use self::ast::{AST, Statement, Block, Literal, Operation, TableEntry, BluIterator, LoopOp};
+use self::ast::{AST, Statement, Block, Literal, Operation, TableIndex, BluIterator, LoopOp};
 pub mod ast;
-use nom::sequence::delimited;
-use nom::multi::{separated_list0, many0};
-use nom::bytes::complete::take_while1;
-use nom::bytes::complete::take_until;
-pub fn parse_blu(mut code: &str, filename: String) -> Result<AST> {
-    let mut statements = vec![];
-    let line_num = code.to_string().clone().matches("\n").count();
-    while let Ok((c, statement)) = parse_standalone_statement(code) {
-        code = c;
-        statements.push(statement);
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParserError {
+    UnexpectedToken(Token),
+    UnexpectedTokenEx(Token, TokenKindDesc),
+    UnexpectedTokenExKind(Token, TokenKind),
+    UnexpectedEos,
+    UnexpectedEosEx(TokenKindDesc),
+    UnexpectedEosExKind(TokenKind),
+}
+pub type Result<T> = std::result::Result<T, ParserError>;
+pub struct Parser {
+    pos: usize,
+    token_stream: Vec<Token>,
+}
+
+impl Parser {
+    pub fn new(token_stream: Vec<Token>) -> Self {
+        Self { pos: 0, token_stream }
     }
-    if let Err(e) = parse_standalone_statement(code) {
-        match e {
-            Err::Incomplete(_) => {},
-            Err::Error(e) => {
-                let until: Vec<&str> = code.split(" ").collect();
-                
-                let current_line_num = code.matches("\n").count();
-
-                let code = match e.code {
-                    ErrorKind::Tag => format!("Couldn't recognize tag [{}]", until[0]),
-                    _ => return Ok(AST { statements }),
-
-                };
-                println!("{}: Parsing errored at {}@{}, `{}`", "error".red().bold(), filename, line_num-current_line_num+1, code);
-                exit(1);
-            },
-            Err::Failure(_) => bail!(e.to_string()),
+    pub fn parse(mut self) -> Result<AST> {
+        let mut statements = vec![];
+        while self.token_stream.len()-self.pos > 0 {
+            statements.push(dbg!(self.parse_standalone_statement(self.token_stream.len())?));
         }
+        Ok(AST { statements })
     }
-    Ok(AST {
-        statements
-    })
-}
-
-fn parse_semi_ended_statement(code: &str) -> IResult<&str, Statement> {
-    let (code, statement) = pss!(alt((
-        parse_return,
-        parse_loop_operation,
-        parse_call,
-        parse_let,
-        parse_global,
-        parse_assignment,
-    )))(code)?;
-    let (code, _) = pss!(tag(";"))(code)?;
-    
-    Ok((code, statement))
-}
-fn parse_standalone_statement(code: &str) -> IResult<&str, Statement> {
-    let code = skip_comment(code);
-    let (code, mut statement) = pss!(alt((
-        parse_if,
-        parse_while,
-        parse_loop,
-        parse_func,
-        parse_for,
-        parse_semi_ended_statement,
-)   ))(code)?;
-    match &mut statement {
-        Statement::Call(_, _, standalone) => *standalone = true,
-        Statement::Function(_, _, _, standalone) => *standalone = true,
-        _ => {}
-    }
-    Ok((code, statement))
-}
-
-
-fn parse_statement(code: &str) -> IResult<&str, Statement> {
-    let code = skip_comment(code);
-    let (code, statement) = pss!(alt((
-            parse_func,
-            parse_op,
-            parse_table,
-            parse_index,
-            parse_call,
-            parse_method,
-            parse_paren,
-            parse_nil,
-            parse_literal,
-            parse_child,
-            parse_get,
-    )))(code)?;
-    Ok((code, statement))
-}
-
-fn parse_for(code: &str) -> IResult<&str, Statement> {
-    let (code, _) = pss!(tag("for"))(code)?;
-    let (code, iter) = alt((
-        |code| {
-            let (code, iterative) = s!(pss!(parse_ident))(code)?;
-            let (code, _) = tag("in")(code)?;
-            let (code, start) = pss!(parse_non_op_statement)(code)?;
-            let (code, _) = tag("..")(code)?;
-            let (code, end) = pss!(parse_non_op_statement)(code)?;
-            let (code, step) = if let Ok((_code, step)) = parse_step(code) {
-                (_code, Some(Box::new(step)))
-            }else{
-                (code, None)
-            };
-            Ok((code, BluIterator::Numerical(iterative, Box::new(start), Box::new(end), step)))
-        },
-        |code| {
-            let (code, iteratives) = nom::multi::separated_list1(tag(","), s!(pss!(parse_ident)))(code)?;
-            let (code, _) = pss!(tag("in"))(code)?;
-            let (code, iter) = pss!(parse_statement)(code)?;
-            Ok((code, BluIterator::Each(iteratives, Box::new(iter))))
-        },
-        |code| {
-            let (code, iteratives) = nom::multi::separated_list1(tag(","), s!(pss!(parse_ident)))(code)?;
-            let (code, _) = pss!(tag("iter"))(code)?;
-            let (code, iter) = pss!(parse_statement)(code)?;
-            Ok((code, BluIterator::Iterator(iteratives, Box::new(iter))))
-        }
-    ))(code)?;
-    let (code, block) = parse_block(code)?;
-    Ok((code, Statement::For(iter, block)))
-}
-fn parse_step(code: &str) -> IResult<&str, Statement> {
-    let (code, _): (&str, &str) = tag(",")(code)?;
-    let (code, step) = parse_non_op_statement(code)?;
-    Ok((code, step)) 
-}
-fn parse_while(code: &str) -> IResult<&str, Statement> {
-    let (code, _) = pss!(tag("while"))(code)?;
-    let (code, statement) = pss!(delimited(char('('), pss!(parse_statement), char(')')))(code)?;
-    let (code, block) = pss!(parse_block)(code)?;
-    Ok((code, Statement::While(Box::new(statement), block)))
-}
-fn parse_loop(code: &str) -> IResult<&str, Statement> {
-    let (code, _) = pss!(tag("loop"))(code)?;
-    let (code, block) = pss!(parse_block)(code)?;
-    let (code, _) = pss!(tag("until"))(code)?;
-    let (code, statement) = pss!(delimited(char('('), pss!(parse_statement), char(')')))(code)?;
-    Ok((code, Statement::Loop(Box::new(statement), block)))
-}
-fn parse_loop_operation(code: &str) -> IResult<&str, Statement> {
-    let (code, op) = pss!(alt((
-        tag("break"),
-        tag("continue"),
-    )))(code)?;
-    let op = match op {
-        "break" => LoopOp::Break,
-        "continue" => LoopOp::Continue,
-        _ => unreachable!()
-    };
-    Ok((code, Statement::LoopOperation(op)))
-}
-fn parse_child(code: &str) -> IResult<&str, Statement> {
-    let (code, parent) = pss!(parse_non_child_statement)(code)?;
-    let (code, _) = tag(".")(code)?;
-    let (code, child) = pss!(alt((
-        parse_child,
-        parse_get
-    )))(code)?;
-    
-    Ok((code, Statement::Child(Box::new(parent), Box::new(child))))
-}
-
-fn parse_non_child_statement(code: &str) -> IResult<&str, Statement> {
-    let code = skip_comment(code);
-    let (code, statement) = pss!(alt((
-        parse_paren,
-        parse_get,
-        parse_literal,
-  )))(code)?;
-  Ok((code, statement))
-}
-fn parse_call(code: &str) -> IResult<&str, Statement> {
-    let (code, subject) = pss!(parse_non_call_statement)(code)?;
-    let (code, args) = pss!(delimited(char('('), separated_list0(char(','), pss!(parse_statement)), char(')')))(code)?;
-    Ok((code, Statement::Call(Box::new(subject), args, false)))
-}
-fn parse_non_call_statement(code: &str) -> IResult<&str, Statement> {
-    let code = skip_comment(code);
-    let (code, statement) = pss!(alt((
-        parse_paren,
-        parse_method,
-        parse_child,
-        parse_get,
-  )))(code)?;
-  Ok((code, statement))
-}
-fn parse_method(code: &str) -> IResult<&str, Statement> {
-    let (code, parent) = pss!(alt((
-        parse_literal,
-        parse_paren,
-        parse_child,
-        parse_get,
-    )))(code)?;
-    let (code, _) = tag(":")(code)?;
-    let (code, method) = s!(pss!(parse_ident))(code)?;
-    Ok((code, Statement::Method(Box::new(parent), method)))
-}
-fn parse_non_op_statement(code: &str) -> IResult<&str, Statement> {
-    let code = skip_comment(code);
-    let (code, statement) = pss!(alt((
-        parse_index,
-        parse_paren,
-        parse_literal,
-        parse_call,
-        parse_child,
-        parse_get,
-  )))(code)?;
-  Ok((code, statement))
-}
-fn parse_if(code: &str) -> IResult<&str, Statement> {
-    let (code, _) = pss!(tag("if"))(code)?;
-    let (code, statement) = pss!(delimited(char('('), pss!(parse_statement), char(')')))(code)?;
-    let (code, block) = pss!(parse_block)(code)?;
-    let (mut code, elseifs) = many0(pss!(parse_elseif))(code)?;
-    let mut _else = None;
-    if let Ok((_code, __else)) = parse_else(code) {
-        code = _code;
-        _else = Some(__else);
-    }
-    Ok((code, Statement::If(Box::new(statement), block, elseifs, _else)))
-}
-
-fn parse_elseif(code: &str) -> IResult<&str, (Statement, Block)> {
-    let (code, _) = pss!(tag("else if"))(code)?;
-    let (code, statement) = pss!(delimited(char('('), pss!(parse_statement), char(')')))(code)?;
-    let (code, block) = pss!(parse_block)(code)?;
-    Ok((code, (statement, block)))
-}
-fn parse_else(code: &str) -> IResult<&str, Block> {
-    let (code, _) = pss!(tag("else"))(code)?;
-    let (code, block) = pss!(parse_block)(code)?;
-    Ok((code, block))
-}
-fn parse_index(code: &str) -> IResult<&str, Statement> {
-    let (code, indexed) = pss!(parse_non_index_statement)(code)?;
-    let (code, _) = pss!(char('['))(code)?;
-    let (code, indexer) = parse_statement(code)?;
-    let (code, _) = pss!(char(']'))(code)?;
-    Ok((code, Statement::Index(Box::new(indexed), Box::new(indexer))))
-}
-fn parse_non_index_statement(code: &str) -> IResult<&str, Statement> {
-    let code = skip_comment(code);
-    let (code, statement) = pss!(alt((
-        parse_paren,
-        parse_literal,
-        parse_call,
-        parse_child,
-        parse_get,
-  )))(code)?;
-  Ok((code, statement))
-}
-fn parse_op(code: &str) -> IResult<&str, Statement> {
-    let (code, operand) = if let Ok((code, operand)) = pss!(parse_non_op_statement)(code) {
-        (code, Some(operand))
-    }else{
-        (code, None)
-    };
-    let (code, op) = pss!(alt((
-        tag("=="),
-        tag("!="),
-        tag(">"),
-        tag("<"),
-        tag(">="),
-        tag("<="),
-        tag("%"),
-        tag("+"),
-        tag("-"),
-        tag("/"),
-        tag("*"),
-        tag("^"),
-        tag("!"),
-        tag(".."),
-        tag("&&"),
-        tag("||"),
-    )))(code)?;
-    let op = match op {
-        "==" => Operation::Equal,
-        "!=" => Operation::NotEqual,
-        ">" => Operation::Greater,
-        "<" => Operation::Lesser,
-        ">=" => Operation::GE,
-        "<=" => Operation::LE,
-        "%" => Operation::Mod,
-        "+" => Operation::Add,
-        "-" => Operation::Sub,
-        "/" => Operation::Div,
-        "*" => Operation::Mul,
-        "^" => Operation::Exp,
-        "!" => Operation::Not,
-        ".." => Operation::StringAdd,
-        "&&" => Operation::And,
-        "||" => Operation::Or,
-        _ => unreachable!(),
-    };
-    let (code, (operand, operator)) = if operand.is_none() {
-        let (code, statement) = pss!(parse_statement)(code)?;
-        
-        (code, (statement, None))
-    }else {
-        let (code, operator) = pss!(parse_statement)(code)?;
-        (code, (operand.unwrap(), Some(Box::new(operator))))
-    };
-    Ok((code, Statement::Operation(Box::new(operand), op, operator)))
-}
-fn parse_paren(code: &str) -> IResult<&str, Statement> {
-    let (code, _) = pss!(char('('))(code)?;
-    let (code, stmt) = parse_statement(code)?;
-    let (code, _) = pss!(char(')'))(code)?;
-    Ok((code, Statement::Paren(Box::new(stmt))))
-}
-fn parse_get(code: &str) -> IResult<&str, Statement> {
-    let (code, ident) = s!(parse_ident)(code)?;
-    Ok((code, Statement::Get(ident)))
-}
-fn parse_let(code: &str) -> IResult<&str, Statement> {
-    let (code, _) = pss!(tag("let"))(code)?;
-    let (mut code, name) = s!(pss!(parse_ident))(code)?;
-    let mut value = None;
-    if let Ok((_code, _value)) = parse_possible_assign(code) {
-        code = _code;
-        value = _value;
-    }
-    Ok((code, Statement::Let(name, value)))
-}
-fn parse_global(code: &str) -> IResult<&str, Statement> {
-    let (code, _) = pss!(tag("global"))(code)?;
-    let (mut code, name) = s!(pss!(parse_ident))(code)?;
-    let mut value = None;
-    if let Ok((_code, _value)) = parse_possible_assign(code) {
-        code = _code;
-        value = _value;
-    }
-    Ok((code, Statement::Global(name, value)))
-}
-fn parse_possible_assign(code: &str) -> IResult<&str, Option<Box<Statement>>> {
-    let (code, _) = pss!(tag("="))(code)?;
-    let (code, statement) = pss!(parse_statement)(code)?;
-    Ok((code, Some(Box::new(statement))))
-}
-fn parse_number(code: &str) -> IResult<&str, f64> {
-    let (code, num): (&str, &str) = pss!(take_while1(is_number()))(code)?;
-    let num = num.parse().map_err(|_| {
-        nom::Err::Error(error::make_error("Couldn't parse number", ErrorKind::Digit))
-    })?;
-    Ok((code, num))
-}
-fn parse_int(code: &str) -> IResult<&str, i32> {
-    let (code, num): (&str, &str) = pss!(take_while1(|c| is_digit(c as u8) || c == '-'))(code)?;
-    let num = num.parse().map_err(|_| {
-        nom::Err::Error(error::make_error("Couldn't parse number", ErrorKind::Digit))
-    })?;
-    Ok((code, num))
-}
-fn parse_literal(code: &str) -> IResult<&str, Statement> {
-    let (code, lit) = pss!(alt((
-        |code| {
-            let (code, num) = parse_number(code)?; 
-            Ok((code, Literal::Number(num)))
-        },
-        |code| {
-            let (code, num) = parse_int(code)?; 
-            Ok((code, Literal::Number(num.try_into().unwrap())))
-        },
-        |code| {
-            let (code, _) = char('"')(code)?;
-            let (code, string) = s!(take_until("\""))(code)?;
-            let (code, _) = char('"')(code)?;
-            Ok((code, Literal::String(string)))
-        },
-        |code| {
-            let (code, stmts) = pss!(delimited(
-                char('['),
-                pss!(separated_list0(char(','), parse_statement)),
-                char(']'),
-            ))(code)?;
-            Ok((code, Literal::Slice(stmts)))
-        },
-        |code| {
-            let (code, boolean): (&str, &str) = pss!(alt((tag("true"), tag("false"))))(code)?;
-            Ok((code, Literal::Boolean(match boolean {
-                "true" => true,
-                "false" => false,
-                _ => false,
-            })))
-        }
-    )))(code)?;
-    Ok((code, Statement::Literal(lit)))
-}
-fn parse_assignment(code: &str) -> IResult<&str, Statement> {
-    let (code, target) = pss!(alt((
-        parse_index,
-        parse_child,
-        parse_get
-    )))(code)?;
-    let (code, _) = pss!(tag("="))(code)?;
-    let (code, source) = pss!(parse_statement)(code)?;
-    Ok((code, Statement::Assignment(Box::new(target), Box::new(source))))
-}
-fn parse_comment(code: &str) -> IResult<&str, Statement> {
-    pss!(alt((
-        |code| {
-            let (code, _): (&str, _) = tag("//")(code)?;
-            let (code, message) = take_until("\n")(code)?;
-            dbg!(message);
-            Ok((code, Statement::Comment(ast::CommentType::SingleLine, message.to_string())))
-        },
-        |code| {
-            let (code, _): (&str, _) = tag("/*")(code)?;
-            let (code, message) = take_until("*/")(code)?;
-            let (code, _) = pss!(tag("*/"))(code)?;
-            Ok((code, Statement::Comment(ast::CommentType::MultiLine, message.to_string())))
-        }
-    )))(code)
-}
-fn is_number() -> impl Fn(char) -> bool {
-    let atomic = AtomicU8::new(0);
-
-    move |c: char| {
-        let i = atomic.load(std::sync::atomic::Ordering::SeqCst);
-        atomic.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        if i == 0 {
-            c.is_numeric()
+    pub fn parse_standalone_statement(&mut self, end: usize) -> Result<Statement> {
+        let tok = self.peek(0, end)?;
+        let pos = self.pos;
+        if let Ok(assignment) = self.parse_assignment(end) {
+            return Ok(assignment);
         }else{
-            c.is_numeric() || c == '.' || c == '-' || c == 'e' || c == '+'
+            self.pos = pos;
         }
+        if let Ok(call) = self.parse_call(end, true) {
+            return Ok(call);
+        }else{
+            self.pos = pos;
+        }
+        Ok(match &tok.token {
+            TokenKind::ID(id) => {
+                match id.as_str() {
+                    "fn" => self.parse_function(end, true)?,
+                    "let" => self.parse_let(end)?,
+                    "if" => self.parse_if(end)?,
+                    "return" => self.parse_return(end)?,
+                    "for" => self.parse_for(end)?,
+                    "global" => self.parse_global(end)?,
+                    "while" => self.parse_while(end)?,
+                    "loop" => self.parse_loop(end)?,
+                    "break" | "continue" => self.parse_loopop(end)?,
+                    _ => return Err(ParserError::UnexpectedToken(tok)),
+                }
+            },
+            _ => return Err(ParserError::UnexpectedTokenEx(tok, TokenKindDesc::ID)),
+        })
     }
-}
-fn parse_nil(code: &str) -> IResult<&str, Statement> {
-    let (code, _) = pss!(alt((
-        tag("nil"),
-        tag("null"),
-        tag("nul"),
-        tag("()"),
-        tag("none")
-    )))(code)?;
-    Ok((code, Statement::Nil))
-}
-fn parse_func(code: &str) -> IResult<&str, Statement> {
-    let (code, _) = pss!(tag("fn"))(code)?;
-    let (code, name) = if let Ok((code, name)) = s!(pss!(parse_func_ident))(code) {
-        (code, Some(name))
-    }else{
-        (code, None)
-    };
-    let (code, args) = pss!(delimited(char('('), separated_list0(char(','), s!(pss!(alt((
-        parse_ident,
-        |code| tag("...")(code)
-    ))))), char(')')))(code)?;
-    let (code, block) = pss!(parse_block)(code)?;
+    
+    fn parse_statement(&mut self, end: usize) -> Result<Statement> {
+        let tok = self.peek(0, end)?;
 
-    Ok((code, Statement::Function(name, args, block, false)))
-}
-fn parse_return(code: &str) -> IResult<&str, Statement> {
-    let (code, _) = pss!(tag("return"))(code)?;
-    let (code, stmt) = pss!(parse_statement)(code)?;
-    Ok((code, Statement::Return(Box::new(stmt))))
-}
-fn parse_table(code: &str) -> IResult<&str, Statement> {
-    let (code, entries) = pss!(delimited(char('{'), nom::multi::separated_list0(tag(","), pss!(parse_table_entry)), char('}')))(code)?;
-    let entries = entries.into_iter().filter_map(|e| e).collect();
-    Ok((code, Statement::Table(entries)))
-}
-fn parse_table_entry(code: &str) -> IResult<&str, Option<TableEntry>> {
-    alt((
-        |code| {
-            let (code, index): (&str, Statement) = pss!(parse_literal)(code)?;
-            let (code, _) = pss!(tag("="))(code)?;
-            let (code, stmt) = pss!(parse_statement)(code)?;
-            Ok((code, Some(TableEntry::LiteralIndex(index, stmt))))
-        },
-        |code| {
-            let (code, index): (&str, String) = s!(pss!(parse_ident))(code)?;
-            let (code, _) = pss!(tag("="))(code)?;
-            let (code, stmt) = pss!(parse_statement)(code)?;
-            Ok((code, Some(TableEntry::IdentIndex(index, stmt))))
-        },
-        |code| {
-            let (code, stmt): (&str, Statement) = pss!(parse_statement)(code)?;
-            Ok((code, Some(TableEntry::IndexLess(stmt))))
-        },
-        |code| {
-            Ok((code, None))
+        let pos = self.pos;
+        let mut buf = vec![];
+        if let Ok(tok) = self.peek(0, end) && tok.token == TokenKind::Punctuation(Punctuation::Not) {
+            self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Not))?;
+            let st = self.parse_statement(end)?;
+            return Ok(Statement::Operation(Box::new(st), Operation::Not, None))
         }
-    ))(code)
-}
-fn parse_block(code: &str) -> IResult<&str, Block> {
-    let (code, stmts) = pss!(delimited(char('{'), nom::multi::many0(parse_standalone_statement), char('}')))
-    (code)?;
-    Ok((code, Block(stmts)))
-}
-fn parse_ident(code: &str) -> IResult<&str, &str> {
-    take_while1(|c| is_ident(c))(code)
-}
-fn is_ident(c: char) -> bool {
-    c.is_alphanumeric() || c == '_' || c == '-'
-}
-fn parse_func_ident(code: &str) -> IResult<&str, &str> {
-    take_while1(|c| is_func_ident(c))(code)
-}
-fn is_func_ident(c: char) -> bool {
-    c.is_alphanumeric() || c == '_' || c == '.' || c == ':' || c == '-'
-}
-fn skip_comment(mut code: &str) -> &str {
-    while let Ok((_code, _)) = pss!(parse_comment)(code) {
-        code = _code;
+        if let Ok(op) = self.parse_operation(end) {
+            buf.push((self.pos, op));            
+        }
+        self.pos = pos;
+        if let Ok(call) = self.parse_call(end, false) {
+            buf.push((self.pos, call));            
+        }
+        self.pos = pos;
+        if let Ok(lit) = self.parse_literal(end) {
+            buf.push((self.pos, lit))
+        }        
+        self.pos = pos;
+        if let Ok(index) = self.parse_index(end) {
+            buf.push((self.pos, index))
+        }        
+        self.pos = pos;
+        if let Ok(child) = self.parse_child(end) {
+            buf.push((self.pos, child));            
+        }
+        self.pos = pos;
+        if let Ok(method) = self.parse_method(end) {
+            buf.push((self.pos, method));            
+        }
+        self.pos = pos;
+        if let Ok(table) = self.parse_table(end) {
+            buf.push((self.pos, table))
+        }
+        self.pos = pos;
+        let mut d = None;
+        for (pos, stmt) in buf {
+            if let Some((_pos, _)) = &d {
+                if pos <= *_pos {
+                    continue;
+                }
+            }
+            d = Some((pos, stmt));
+        }
+        if let Some((pos, stmt)) = d {
+            self.pos = pos;
+            return Ok(stmt);
+        }
+        Ok(match &tok.token {
+            TokenKind::ID(id) => {
+                match id.as_str() {
+                    "fn" => self.parse_function(end, false)?,
+                    "nil" | "nul" | "null" | "none" => Statement::Nil,
+                    _ => {
+                        self.eat_ex(end, TokenKindDesc::ID)?;
+                        Statement::Get(id.clone())
+                    },
+                }
+            },
+            TokenKind::Punctuation(p) => match *p {
+                Punctuation::LeftSBracket => self.parse_slice(end)?,
+                Punctuation::Sub => {
+                    self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Sub))?;
+                    let num = self.eat_ex(end, TokenKindDesc::Number)?;
+                    match num.token {
+                        TokenKind::Number(num) => {
+                            Statement::Literal(Literal::Number(-match num {
+                                Number::Float(f) => f,
+                                Number::Int(i) => i as f64,
+                                Number::Hex(h) => h as f64,
+                            }))
+                        },
+                        _ => unreachable!(),
+                    }
+                },
+                Punctuation::LeftParen => {
+                    self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
+                    let _end = self.isolate_block(end)?;
+                    let stmt = self.parse_statement(_end)?;
+                    self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightParen))?;
+                    Statement::Paren(Box::new(stmt))
+                },
+                _ => return Err(ParserError::UnexpectedToken(tok))
+            },
+            _ => {
+                
+                return Err(ParserError::UnexpectedToken(tok));
+            }
+        })
     }
-    code
-}
-#[macro_export]
-macro_rules! pss {
-    ($par:expr) => {
-        nom::sequence::delimited(
-            nom::character::complete::multispace0,
-            $par,
-            nom::character::complete::multispace0,
-        )
-    };
-}
-#[macro_export]
-macro_rules! s {
-    ($par:expr) => {
-        |i| $par(i).map(|x: (&str, &str)| (x.0, x.1.to_string()))
-    };
+
+    fn parse_loopop(&mut self, end: usize) -> Result<Statement> {
+        let op = self.eat_ex(end, TokenKindDesc::ID)?;
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
+        if let TokenKind::ID(id) = op.token.clone() {
+            match id.as_str() {
+                "break" => return Ok(Statement::LoopOperation(LoopOp::Break)),
+                "continue" => return Ok(Statement::LoopOperation(LoopOp::Continue)),
+                _ => return Err(ParserError::UnexpectedToken(op))
+            }
+        }
+
+        unreachable!()
+    }
+    fn parse_loop(&mut self, end: usize) -> Result<Statement> {
+        self.eat_ex_kind(end, TokenKind::ID("loop".to_string()))?;
+        let block = self.parse_block(end)?;
+        self.eat_ex_kind(end, TokenKind::ID("until".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
+        let _end = self.isolate_block(end)?;
+        let stmt = self.parse_statement(_end)?;
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightParen))?;
+        Ok(Statement::Loop(Box::new(stmt), block))
+    }
+    fn parse_while(&mut self, end: usize) -> Result<Statement> {
+        self.eat_ex_kind(end, TokenKind::ID("while".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
+        let _end = self.isolate_block(end)?;
+        let stmt = self.parse_statement(_end)?;
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightParen))?;
+        let block = self.parse_block(end)?;
+        Ok(Statement::While(Box::new(stmt), block))
+    }
+    fn parse_literal(&mut self, end: usize) -> Result<Statement> {
+        Ok(match self.peek(0, end)?.token {
+            TokenKind::Number(num) => {
+                self.eat_ex(end, TokenKindDesc::Number)?;
+                Statement::Literal(Literal::Number(match num {
+                    Number::Float(f) => f,
+                    Number::Int(i) => i as f64,
+                    Number::Hex(h) => h as f64,
+                }))
+            },
+            TokenKind::String(s) => {
+                self.eat_ex(end, TokenKindDesc::String)?;
+                Statement::Literal(Literal::String(s.clone()))
+            },
+            TokenKind::ID(id) => {
+                match id.as_str() {
+                    "true" => {
+                        self.eat_ex(end, TokenKindDesc::ID)?;
+                        Statement::Literal(Literal::Boolean(true))
+                    },
+                    "false" => {
+                        self.eat_ex(end, TokenKindDesc::ID)?;
+                        Statement::Literal(Literal::Boolean(false))
+                    },
+                    _ => return Err(ParserError::UnexpectedToken(self.peek(0, end)?))
+                }
+            },
+            _ => return Err(ParserError::UnexpectedToken(self.peek(0, end)?))
+        })
+    }
+    fn parse_index(&mut self, end: usize) -> Result<Statement> {
+        let _end = self.to_last_minding_blocks(end, TokenKind::Punctuation(Punctuation::LeftSBracket))?;
+        let indexed = self.parse_statement(_end)?;
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftSBracket))?;
+        let _end = self.isolate_block(end)?;
+        let index = self.parse_statement(_end)?;
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightSBracket))?;
+        Ok(Statement::Index(Box::new(indexed), Box::new(index)))
+    }
+    fn parse_global(&mut self, end: usize) -> Result<Statement> {
+        self.eat_ex_kind(end, TokenKind::ID("global".to_string()))?;
+        let name = self.eat_ex(end, TokenKindDesc::ID)?;
+        let name = match name.token {
+            TokenKind::ID(s) => s,
+            _ => unreachable!()
+        };
+        let assignment = {
+            if let Ok(t) = self.peek(0, end) && t.token == TokenKind::Punctuation(Punctuation::Equals) {
+                self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Equals))?;
+                let end = self.to_first(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
+                let statement = self.parse_statement(end)?;
+                Some(Box::new(statement))
+            }else{
+                None
+            }
+            
+        };
+
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
+        Ok(Statement::Global(name, assignment))
+    }
+    fn parse_table(&mut self, end: usize) -> Result<Statement> {
+        let mut entries = vec![];
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftBracket))?;
+        let _end = self.isolate_block(end)?;
+        loop {
+
+            let _end = self.to_first_minding_blocks(_end, TokenKind::Punctuation(Punctuation::Comma))?;
+            if _end-self.pos <= 0 {
+                break;
+            }
+            let __end = self.to_last_minding_blocks(_end, TokenKind::Punctuation(Punctuation::Equals))?;
+            let index = if _end-__end <= 1 {
+                TableIndex::None
+            }else {
+                let index = match self.peek(0, _end)?.token {
+                    TokenKind::ID(id) => {
+                        self.eat_ex(_end, TokenKindDesc::ID)?;
+                        TableIndex::Ident(id)
+                    },
+                    TokenKind::Punctuation(Punctuation::LeftSBracket) => {
+                        self.eat_ex_kind(_end, TokenKind::Punctuation(Punctuation::LeftSBracket))?;
+                        let __end = self.isolate_block(_end)?;
+                        let index = self.parse_statement(__end)?;
+                        self.eat_ex_kind(_end, TokenKind::Punctuation(Punctuation::RightSBracket))?;
+                        TableIndex::Statement(index)
+                    }
+                    _ => {
+                        let lit = match self.parse_literal(_end)? {
+                            Statement::Literal(lit) => lit,
+                            _ => unreachable!(),
+                        };
+                        TableIndex::Literal(lit)
+                    }
+                };
+                self.eat_ex_kind(_end, TokenKind::Punctuation(Punctuation::Equals))?;
+                index
+            };
+            let value = self.parse_statement(_end)?;
+            entries.push((index, value));
+            if self.peek(0, end)?.token != TokenKind::Punctuation(Punctuation::Comma) {
+                break;
+            }
+            self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Comma))?;
+
+        }
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightBracket))?;
+        Ok(Statement::Table(entries))
+    }
+    fn parse_operation(&mut self, end: usize) -> Result<Statement> {
+        let mut _end = self.pos;
+        let mut o = 0;
+        let mut i = 0;
+        let mut pr = 0;
+        loop {
+            if _end >= end || self.pos+o >= end {
+                break;
+            }
+            let tok = self.peek(o, end)?;
+            if i == 0 {
+                match tok.token {
+                    TokenKind::Punctuation(p) => if p.is_operation() {
+                        if p == Punctuation::And || p == Punctuation::Or {
+                            _end = self.pos+o;
+                            pr += 1;
+                        }
+                        if p == Punctuation::Not && pr < 1 {
+                            if self.peek(o+1, end)?.token == TokenKind::Punctuation(Punctuation::Equals) {
+                                _end = self.pos+o;
+                            }else{
+                                o +=1;
+                                continue;
+                            }
+                        }
+                        if pr < 1 {
+                            _end = self.pos+o;
+                        }
+                    }else if p == Punctuation::Dot && let Ok(p2) = self.peek(i+1, end) && p2.token == TokenKind::Punctuation(Punctuation::Dot) && pr < 1 {
+                        o+=1;
+                        _end = self.pos+o;
+                    }
+                    _ => {},
+                }
+            }
+            if TokenKindDesc::Punctuation == tok.token {
+                match tok.token {
+                    TokenKind::Punctuation(punct) => match punct {
+                        Punctuation::LeftBracket => i+=1,
+                        Punctuation::RightBracket => i-=1,
+                        Punctuation::LeftSBracket => i+=1,
+                        Punctuation::RightSBracket => i-=1,
+                        Punctuation::LeftParen => i+=1,
+                        Punctuation::RightParen => i-=1,
+                        _ => {},
+                    }
+                    _ => {},
+                }
+            }
+            
+            o += 1;
+        }
+        
+        if _end == end || _end-self.pos <= 0 {
+            return Err(ParserError::UnexpectedEos);
+        }
+        let operand = self.parse_statement(_end)?;
+        let op = self.eat_ex(end, TokenKindDesc::Punctuation)?;
+        let op = match op.token {
+            TokenKind::Punctuation(punct) => match punct {
+                Punctuation::Dot => {
+                    self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot))?;
+                    Operation::StringAdd
+                },
+                Punctuation::Mod => Operation::Mod,
+                Punctuation::Mul => Operation::Mul,
+                Punctuation::And => Operation::And,
+                Punctuation::Or => Operation::Or,
+                Punctuation::Sub => Operation::Sub,
+                Punctuation::Div => Operation::Div,
+                Punctuation::Plus => Operation::Add,
+                Punctuation::Exp => Operation::Exp,
+                Punctuation::Not => {
+                    self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Equals))?;
+                    Operation::NotEqual
+                },
+                Punctuation::LeftArrow => {
+                    let tok = self.peek(0, end)?;
+                    if tok.token == TokenKind::Punctuation(Punctuation::Equals) {
+                        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Equals))?;
+                        Operation::LE
+                    }else{
+                        Operation::Lesser
+                    }
+                },
+                Punctuation::RightArrow => {
+                    let tok = self.peek(0, end)?;
+                    if tok.token == TokenKind::Punctuation(Punctuation::Equals) {
+                        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Equals))?;
+                        Operation::GE
+                    }else{
+                        Operation::Greater
+                    }
+                },
+                Punctuation::Equals => {
+                    self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Equals))?;
+                    Operation::Equal
+                },
+                _ => return Err(ParserError::UnexpectedToken(op)),
+            },
+            _ => unreachable!()
+        };
+        let operator = self.parse_statement(end)?;
+        Ok(Statement::Operation(Box::new(operand), op, Some(Box::new(operator))))
+    }
+    fn parse_call(&mut self, end: usize, standalone: bool) -> Result<Statement> {
+        let _end = if standalone {
+            self.to_first_minding_blocks(end, TokenKind::Punctuation(Punctuation::Semicolon))?
+        }else {
+            end
+        };
+        let _end = self.to_last_minding_blocks(_end, TokenKind::Punctuation(Punctuation::LeftParen))?;
+        let called = self.parse_statement(_end)?;
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
+        let _end = self.isolate_block(end)?;
+        let mut args = vec![];
+        loop {
+            let _end = self.to_first(_end, TokenKind::Punctuation(Punctuation::Comma))?;
+            if _end-self.pos <= 0 {
+                break;
+            }
+            args.push(self.parse_statement(_end)?);
+            if self.peek(0, end)?.token != TokenKind::Punctuation(Punctuation::Comma) {
+                break;
+            }
+            self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Comma))?;
+        }
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightParen))?;
+        if standalone {
+            self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
+        }
+        Ok(Statement::Call(Box::new(called), args, standalone))
+    }
+    fn parse_child(&mut self, end: usize) -> Result<Statement> {
+        let _end = self.to_last_minding_blocks(end, TokenKind::Punctuation(Punctuation::Dot))?;
+        if _end == end {
+            return Err(ParserError::UnexpectedEos);
+        }
+        let parent = self.parse_statement(_end)?;
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot))?;
+        let child;
+        let id = self.eat_ex(end, TokenKindDesc::ID)?;
+        match id.token {
+            TokenKind::ID(id) => child = Statement::Get(id),
+            _ => unreachable!(),
+        }
+        Ok(Statement::Child(Box::new(parent), Box::new(child)))
+    }
+    fn parse_slice(&mut self, end: usize) -> Result<Statement> {
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftSBracket))?;
+        let __end = self.isolate_block(end)?;
+        let mut elements = vec![];
+        loop {
+            let _end = self.to_first(__end, TokenKind::Punctuation(Punctuation::Comma))?;
+            if _end-self.pos <= 0 {
+                break;
+            }
+            elements.push(self.parse_statement(_end)?);
+            if self.peek(0, end)?.token != TokenKind::Punctuation(Punctuation::Comma) {
+                break;
+            }
+            self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Comma))?;
+        }
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightSBracket))?;
+        Ok(Statement::Literal(Literal::Slice(elements)))
+    }
+    fn parse_function(&mut self, end: usize, standalone: bool) -> Result<Statement> {
+        self.eat_ex_kind(end, TokenKind::ID("fn".to_string()))?;
+        let name;
+        let _end = self.to_first(end, TokenKind::Punctuation(Punctuation::LeftBracket))?;
+        let _end = self.to_last(_end, TokenKind::Punctuation(Punctuation::LeftParen))?;
+        if !standalone {
+            name = if let Ok(method) = self.parse_method(_end) {
+                Some(Box::new(method))
+            }else if let Ok(child) = self.parse_child(_end) {
+                Some(Box::new(child))
+            }else if let Ok(tk) = self.eat_ex(end, TokenKindDesc::ID) {
+                if let TokenKind::ID(id) = tk.token {
+                    Some(Box::new(Statement::Get(id)))
+                }else {
+                    unreachable!()
+                }
+            }else {
+                None
+            }
+        }else{
+            let tk = self.peek(0, end)?;
+            name = if let Ok(method) = self.parse_method(_end) {
+                Some(Box::new(method))
+            }else if let Ok(child) = self.parse_child(_end) {
+                Some(Box::new(child))
+            }else if let Ok(tk) = self.eat_ex(end, TokenKindDesc::ID) {
+                if let TokenKind::ID(id) = tk.token {
+                    Some(Box::new(Statement::Get(id)))
+                }else {
+                    unreachable!()
+                }
+            }else {
+                return Err(ParserError::UnexpectedToken(tk));
+            }
+        }
+        
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
+        let mut args = vec![];
+        loop {
+            if let Ok(arg) = self.eat_ex(end, TokenKindDesc::ID) {
+                match arg.token {
+                    TokenKind::ID(arg) => args.push(arg),
+                    _ => unreachable!(),
+                }
+            }else if let Ok(arg) = self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot)) {
+                self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot))?;
+                self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot))?;
+                args.push("...".to_string());
+            }
+            if self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Comma)).is_err() {
+                break;
+            }
+        }
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightParen))?;
+        let block = self.parse_block(end)?;
+        Ok(Statement::Function(name, args, block, standalone))
+    }
+    fn parse_method(&mut self, end: usize) -> Result<Statement> {
+        println!("?");
+        let _end = self.to_last_minding_blocks(end, TokenKind::Punctuation(Punctuation::Colon))?;
+        let parent = self.parse_statement(_end)?;
+        println!("?2");
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Colon))?;
+        if let TokenKind::ID(id) = self.eat_ex(end, TokenKindDesc::ID)?.token {
+            return Ok(Statement::Method(Box::new(parent), id))
+        }
+        unreachable!()
+    }
+    fn parse_let(&mut self, end: usize) -> Result<Statement> {
+        self.eat_ex_kind(end, TokenKind::ID("let".to_string()))?;
+        let name = self.eat_ex(end, TokenKindDesc::ID)?;
+        let name = match name.token {
+            TokenKind::ID(s) => s,
+            _ => unreachable!()
+        };
+        let assignment = {
+            if let Ok(t) = self.peek(0, end) && t.token == TokenKind::Punctuation(Punctuation::Equals) {
+                self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Equals))?;
+                let end = self.to_first(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
+                let statement = self.parse_statement(end)?;
+                Some(Box::new(statement))
+            }else{
+                None
+            }
+            
+        };
+
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
+        Ok(Statement::Let(name, assignment))
+    }
+    fn parse_if(&mut self, end: usize) -> Result<Statement> {
+        self.eat_ex_kind(end, TokenKind::ID("if".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
+        let _end = self.isolate_block(end)?;
+        let stmt = self.parse_statement(_end)?;
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightParen))?;
+        let block = self.parse_block(end)?;
+        let mut elseifs = vec![];
+        let mut _else = None;
+        loop {
+            if let Ok(t) = self.peek(0, end) && t.token == TokenKind::ID("else".to_string()) {
+                self.eat_ex_kind(end, TokenKind::ID("else".to_string()))?;
+                if self.peek(0, end)?.token == TokenKind::ID("if".to_string()) {
+                    self.eat_ex_kind(end, TokenKind::ID("if".to_string()))?;
+                    self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
+                    let _end = self.isolate_block(end)?;
+                    let stmt = self.parse_statement(_end)?;
+                    self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightParen))?;
+                    let block = self.parse_block(end)?;
+                    elseifs.push((stmt, block));
+                }else{
+                    _else = Some(self.parse_block(end)?);
+                    break;
+                }
+            }else{
+                break;
+            }
+        }
+        Ok(Statement::If(Box::new(stmt), block, elseifs, _else))
+    }
+    fn parse_assignment(&mut self, end: usize) -> Result<Statement> {
+        let _end = self.to_first_minding_blocks(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
+        let __end = self.to_first_minding_blocks(end, TokenKind::Punctuation(Punctuation::Equals))?;
+        let subject = self.parse_statement(__end)?;
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Equals))?;
+        let value = self.parse_statement(_end)?;
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
+        Ok(Statement::Assignment(Box::new(subject), Box::new(value)))
+    }
+    fn parse_return(&mut self, end: usize) -> Result<Statement> {
+        self.eat_ex_kind(end, TokenKind::ID("return".to_string()))?;
+        let __end = self.to_first_minding_blocks(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
+        let mut elements = vec![];
+        loop {
+            let _end = self.to_first(__end, TokenKind::Punctuation(Punctuation::Comma))?;
+            if _end-self.pos <= 0 {
+                break;
+            }
+            elements.push(self.parse_statement(_end)?);
+            if self.peek(0, end)?.token != TokenKind::Punctuation(Punctuation::Comma) {
+                break;
+            }
+            self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Comma))?;
+        }
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
+        Ok(Statement::Return(elements))
+    }
+    fn parse_for(&mut self, end: usize) -> Result<Statement> {
+        self.eat_ex_kind(end, TokenKind::ID("for".to_string()))?;
+        let mut indexors = vec![];
+        loop {
+            indexors.push(match self.eat_ex(end, TokenKindDesc::ID)?.token {
+                TokenKind::ID(id) => id,
+                _ => unreachable!(),
+            });
+            if self.peek(0, end)?.token != TokenKind::Punctuation(Punctuation::Comma) {
+                break;
+            }
+            self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Comma))?;
+        }
+        if indexors.len() < 1 {
+            return Err(ParserError::UnexpectedEos);
+        }
+        let tk = self.peek(0, end)?.token;
+        let iterator = if tk == TokenKind::ID("in".to_string()) {
+            self.eat_ex_kind(end, TokenKind::ID("in".to_string()))?;
+            let mut __end = self.pos;
+            let mut o = 0;
+            let mut i = 0;
+            loop {
+                if __end >= end {
+                    break;
+                }
+                let tok = self.peek(o, end)?;
+                if TokenKindDesc::Punctuation == tok.token {
+                    match tok.token {
+                        TokenKind::Punctuation(punct) => match punct {
+                            Punctuation::LeftBracket => i+=1,
+                            Punctuation::RightBracket => i-=1,
+                            Punctuation::LeftSBracket => i+=1,
+                            Punctuation::RightSBracket => i-=1,
+                            Punctuation::LeftParen => i+=1,
+                            Punctuation::RightParen => i-=1,
+                            _ => {},
+                        }
+                        _ => {},
+                    }
+                }
+                if tok.token == TokenKind::Punctuation(Punctuation::Dot) && let Ok(tok2) = self.peek(o+1, end) && tok2.token == TokenKind::Punctuation(Punctuation::Dot) && i == 0 {
+                    break;
+                }
+                o += 1;
+                __end+=1;
+            }
+            let start = self.parse_statement(__end)?;
+            if self.peek(0, end)?.token == TokenKind::Punctuation(Punctuation::Dot) {
+                self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot))?;
+                self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot))?;
+                let i_end = self.parse_statement(end)?;
+                let step = if let Ok(t) = self.peek(0, end) && t.token == TokenKind::Punctuation(Punctuation::Comma) {
+                    self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Comma))?;
+                    Some(Box::new(self.parse_statement(end)?))
+                }else{
+                    None
+                };
+                BluIterator::Numerical(indexors[0].clone(), Box::new(start), Box::new(i_end), step)
+            }else{
+                BluIterator::Each(indexors, Box::new(start))
+            }
+        }else if tk == TokenKind::ID("iter".to_string()) {
+            self.eat_ex_kind(end, TokenKind::ID("iter".to_string()))?;
+            let iter = self.parse_statement(end)?;
+            BluIterator::Iterator(indexors, Box::new(iter))
+        }else{
+            return Err(ParserError::UnexpectedTokenEx(self.eat(end)?, TokenKindDesc::ID));
+        };
+        let block = self.parse_block(end)?;
+        Ok(Statement::For(iterator, block))
+    }
+
+    fn parse_block(&mut self, end: usize) -> Result<Block> {
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftBracket))?;
+        let _end = self.isolate_block(end)?;
+        let mut statements = vec![];
+        while _end-self.pos > 0 {
+            statements.push(dbg!(self.parse_standalone_statement(_end)?));
+        }
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightBracket))?;
+        Ok(Block(statements))
+    }
+    
+
+    fn to_first(&mut self, _end: usize, _tok: TokenKind) -> Result<usize> {
+        let mut end = self.pos;
+        let mut o = 0;
+        loop {
+            if end >= _end {
+                break;
+            }
+            let tok = self.peek(o, _end)?;
+            if tok.token == _tok {
+                break;
+            }
+            o += 1;
+            end+=1;
+        }
+        Ok(end)
+    }
+    fn to_first_minding_blocks(&mut self, _end: usize, _tok: TokenKind) -> Result<usize> {
+        let mut end = self.pos;
+        let mut o = 0;
+        let mut i = 0;
+        loop {
+            if end >= _end {
+                break;
+            }
+            let tok = self.peek(o, _end)?;
+            if TokenKindDesc::Punctuation == tok.token {
+                match tok.token {
+                    TokenKind::Punctuation(punct) => match punct {
+                        Punctuation::LeftBracket => i+=1,
+                        Punctuation::RightBracket => i-=1,
+                        Punctuation::LeftSBracket => i+=1,
+                        Punctuation::RightSBracket => i-=1,
+                        Punctuation::LeftParen => i+=1,
+                        Punctuation::RightParen => i-=1,
+                        _ => {},
+                    }
+                    _ => {},
+                }
+            }
+            if tok.token == _tok && i == 0 {
+                break;
+            }
+            o += 1;
+            end+=1;
+        }
+        Ok(end)
+    }
+    fn to_last(&mut self, _end: usize, _tok: TokenKind) -> Result<usize> {
+        let mut end = self.pos;
+        let mut o = 0;
+        loop {
+            if end >= _end || self.pos+o >= _end {
+                break;
+            }
+            let tok = self.peek(o, _end)?;
+            if tok.token == _tok {
+                end = self.pos+o;
+            }
+            o += 1;
+        }
+        Ok(end)
+    }
+    fn to_last_minding_blocks(&mut self, _end: usize, _tok: TokenKind) -> Result<usize> {
+        let mut end = self.pos;
+        let mut o = 0;
+        let mut i = 0;
+        loop {
+            if end >= _end || self.pos+o >= _end {
+                break;
+            }
+            let tok = self.peek(o, _end)?;
+            if tok.token == _tok && i == 0 {
+                end = self.pos+o;
+            }
+            if TokenKindDesc::Punctuation == tok.token {
+                match tok.token {
+                    TokenKind::Punctuation(punct) => match punct {
+                        Punctuation::LeftBracket => i+=1,
+                        Punctuation::RightBracket => i-=1,
+                        Punctuation::LeftSBracket => i+=1,
+                        Punctuation::RightSBracket => i-=1,
+                        Punctuation::LeftParen => i+=1,
+                        Punctuation::RightParen => i-=1,
+                        _ => {},
+                    }
+                    _ => {},
+                }
+            }
+            
+            o += 1;
+        }
+        Ok(end)
+    }
+    fn isolate_block(&mut self, _end: usize) -> Result<usize> {
+        let mut i = 1;
+        let mut end = self.pos-1;
+        let mut o = 0;
+        loop {
+            if i == 0 {
+                break;
+            }
+            let tok = self.peek(o, _end)?;
+            if TokenKindDesc::Punctuation == tok.token {
+                match tok.token {
+                    TokenKind::Punctuation(punct) => match punct {
+                        Punctuation::LeftBracket => i+=1,
+                        Punctuation::RightBracket => i-=1,
+                        Punctuation::LeftSBracket => i+=1,
+                        Punctuation::RightSBracket => i-=1,
+                        Punctuation::LeftParen => i+=1,
+                        Punctuation::RightParen => i-=1,
+                        _ => {},
+                    }
+                    _ => {},
+                }
+            }
+            end+=1;
+            o+=1;
+        }
+        Ok(end)
+    }
+
+    fn eat(&mut self, end: usize) -> Result<Token> {
+        if end-self.pos <= 0 {
+            return Err(ParserError::UnexpectedEos);
+        }
+        self.pos +=1;
+        Ok(self.token_stream[self.pos-1].clone())
+    }
+    fn eat_ex(&mut self, end: usize, ex: TokenKindDesc) -> Result<Token> {
+        let token = self.eat(end)?;
+        if ex != token.token {
+            self.pos -= 1;
+            return Err(ParserError::UnexpectedTokenEx(token, ex));
+        }
+        Ok(token)
+    }
+    fn eat_ex_kind(&mut self, end: usize, ex_kind: TokenKind) -> Result<Token> {
+        let token = self.eat(end)?;
+        if ex_kind != token.token {
+            self.pos -= 1;
+            return Err(ParserError::UnexpectedTokenExKind(token, ex_kind));
+        }
+        Ok(token)
+    }
+
+    fn peek(&mut self, offset: usize, end: usize) -> Result<Token> {
+        if end-self.pos <= 0 {
+            return Err(ParserError::UnexpectedEos);
+        }
+        Ok(self.token_stream[self.pos+offset].clone())
+    }
 }

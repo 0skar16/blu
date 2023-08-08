@@ -3,7 +3,7 @@
 #![feature(path_file_prefix)]
 use std::{path::PathBuf, env::{current_dir, set_current_dir}, process::{Command, exit}};
 use anyhow::{Result, bail};
-use blu::parser::parse_blu;
+use blu::{parser::{Parser as BluParser, ParserError}, lexer::{Lexer, LexerError}};
 use clap::{Parser, Subcommand, Args};
 use colored::Colorize;
 use serde::{Serialize, Deserialize};
@@ -52,7 +52,8 @@ fn main() -> Result<()> {
             }else {
                 "N/A".to_string()
             };
-            let ast = parse_blu(code.as_str(), filename)?;
+            let token_stream = map_lexer_err!(Lexer::new(code.chars()).tokenize(), filename);
+            let ast = map_parser_err!(BluParser::new(token_stream).parse(), filename);
             let compiled = blu::compiler::compile(ast);
             if output == "-" {
                 print!("{}", compiled);
@@ -84,9 +85,8 @@ fn main() -> Result<()> {
                 let out = Command::new("/usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
                 let str = std::str::from_utf8(&out.stderr);
                 if !out.status.success() {
-                    eprintln!("{}: Pre compile command `{}` in [{}] erorred!\n\t{}", "error".red().bold(), cmd, manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t"));
+                    err!(format!("Pre compile command `{}` in [{}] erorred!\n\t{}", cmd, manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t")));
                 }
-                exit(1);
             }
 
             build_dir(dir.join("src"), dir.join("target"))?;
@@ -109,9 +109,8 @@ fn main() -> Result<()> {
                             let out = Command::new("/usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
                             let str = std::str::from_utf8(&out.stderr);
                             if !out.status.success() {
-                                eprintln!("{}: Pre compile command `{}` in [{}] erorred!\n\t{}", "error".red().bold(), cmd, mod_manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t"));
+                                err!(format!("Pre compile command `{}` in [{}] erorred!\n\t{}", cmd, manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t")));
                             }
-                            exit(1);
                         }
                         set_current_dir(&dir)?;
                         build_dir(path.join("src"), dir.join("target").join("modules").join(&mod_manifest.name))?;
@@ -119,9 +118,8 @@ fn main() -> Result<()> {
                             let out = Command::new("/usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
                             let str = std::str::from_utf8(&out.stderr);
                             if !out.status.success() {
-                                eprintln!("{}: Post compile command `{}` in [{}] erorred!\n\t{}", "error".red().bold(), cmd, mod_manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t"));
+                                err!(format!("Post compile command `{}` in [{}] erorred!\n\t{}", cmd, mod_manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t")));
                             }
-                            exit(1);
                         }
                     }else{
                         bail!("Couldn't locate the path for module {}", include.name);
@@ -133,9 +131,8 @@ fn main() -> Result<()> {
                 let out = Command::new("/usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
                 let str = std::str::from_utf8(&out.stderr);
                 if !out.status.success() {
-                    eprintln!("{}: Post compile command `{}` in [{}] erorred!\n\t{}", "error".red().bold(), cmd, manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t"));
+                    err!(format!("Post compile command `{}` in [{}] erorred!\n\t{}", cmd, manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t")));
                 }
-                exit(1);
             }
         },
         Commands::Init {} => {
@@ -177,11 +174,6 @@ fn build_dir(dir: PathBuf, out: PathBuf) -> Result<()> {
     for src in WalkDir::new(dir).into_iter() {
         if let Ok(path) = src && path.metadata()?.is_file() {
             let path = path.into_path();
-            let filename = if let Some(str) = path.file_name() {
-                str.to_string_lossy().to_string()
-            }else {
-                "N/A".to_string()
-            };
             let new_path = path.to_string_lossy().to_string().replace(&root, &new_root).replace(".blu", ".lua");
             let new_path = PathBuf::from(new_path);
             if let Some(parent) = new_path.parent() {
@@ -193,10 +185,49 @@ fn build_dir(dir: PathBuf, out: PathBuf) -> Result<()> {
                 continue;
             }
             let src = std::fs::read_to_string(&path)?;
-            let ast = parse_blu(&src, filename)?;
+            let err_filename = path.to_string_lossy().to_string().replace(&root, "");
+            let token_stream = map_lexer_err!(Lexer::new(src.chars()).tokenize(), err_filename);
+            let ast = map_parser_err!(BluParser::new(token_stream).parse(), err_filename);
             let compiled = blu::compiler::compile(ast);
             std::fs::write(new_path, compiled)?;
         }
     }
     Ok(())
+}
+#[macro_export]
+macro_rules! map_lexer_err {
+    ($lout:expr, $filename:expr) => {
+        $lout.map_err(|l_err| {
+            let error = match l_err {
+                LexerError::UnexpectedChar(char, line, col) => format!("Lexer errored:\n\tUnexpected char [{}] at {}:{}:{}", char, $filename, line, col),
+                LexerError::UnexpectedEof(line, col) => format!("Lexer errored:\n\tUnexpected end of file at {}:{}:{}", $filename, line, col),
+                LexerError::ExpectedCharNotExisting(char, line, col) => format!("Lexer errored:\n\tExpected char [{}], but didn't get one at {}:{}:{}", char, $filename, line, col),
+            };
+            err!(error);
+        }).unwrap()
+    };
+}
+#[macro_export]
+macro_rules! map_parser_err {
+    ($pout:expr, $filename:expr) => {
+        $pout.map_err(|p_err| {
+            let error = match p_err {
+                ParserError::UnexpectedTokenEx(tok, ex_tok) => format!("Parser errored:\n\tUnexpected token [{:?}:`{}`] instead of [{:?}] at {}:{}:{}", tok.token, tok.contents, ex_tok, $filename, tok.line, tok.col),
+                ParserError::UnexpectedToken(tok) => format!("Parser errored:\n\tUnexpected token [{:?}:`{}`] at {}:{}:{}", tok.token, tok.contents, $filename, tok.line, tok.col),
+                ParserError::UnexpectedTokenExKind(tok, ex_tok_kind) => format!("Parser errored:\n\tUnexpected token [{:?}:`{}`] instead of [{:?}] at {}:{}:{}", tok.token, tok.contents, ex_tok_kind, $filename, tok.line, tok.col),
+                ParserError::UnexpectedEos => format!("Parser errored:\n\tUnexpected end of Token Stream"),
+                ParserError::UnexpectedEosEx(tk) => format!("Parser errored:\n\tUnexpected end of Token Stream, expected: [{:?}]", tk),
+                ParserError::UnexpectedEosExKind(tk) => format!("Parser errored:\n\tUnexpected end of Token Stream, expected: [{:?}]", tk),
+            };
+            err!(error);
+            
+        }).unwrap()
+    };
+}
+#[macro_export]
+macro_rules! err {
+    ($error:expr) => {
+        eprintln!("   {}: {}","error".red().bold(), $error);
+        exit(1);
+    };
 }

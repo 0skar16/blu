@@ -1,7 +1,8 @@
 // Function creating test
 fn test_function(arg) {
     // Literals and locals
-    let a = 1;
+    let c = !(a > 0 && a < 3) && b && !false;
+    let a = -1;
     let b = true;
     // Basic operations and if test
     if(a > 0 && b && !false) {
@@ -32,7 +33,7 @@ fn variable_len_arg(arg1, ...) {
     }
 }
 // Calling a call inside a paren test
-let a = (test_function("hello ".."world!"))();
+let a = test_function("hello".."world!");
 // Table test and slice test
 let b = {
     abc = "hey!",
@@ -46,7 +47,7 @@ let b = {
     }]
 };
 // Calling an index of a child inside a param
-let c = (b.d[1])();
+let c = b.d[1]();
 // Testing the contents
 print(c);
 // GLOBALS!

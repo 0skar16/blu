@@ -77,6 +77,10 @@ impl Lexer {
                 let s = self.take_until("\"");
                 Token::new(self, TokenKind::String(s.clone()), format!("\"{}\"",s))
             },
+            '`' => {
+                let s = self.take_until("`");
+                Token::new(self, TokenKind::String(s.clone()), format!("`{}`",s))
+            },
             '-' => Token::new(self, TokenKind::Punctuation(Punctuation::Sub), "-".to_string()),
             '{' => Token::new(self, TokenKind::Punctuation(Punctuation::LeftBracket), "{".to_string()),
             '}' => Token::new(self, TokenKind::Punctuation(Punctuation::RightBracket), "}".to_string()),

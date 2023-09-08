@@ -87,7 +87,7 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
         Statement::Literal(lit) => {
             buf.push_str(&match lit {
                 crate::parser::ast::Literal::Number(number) => number.to_string(),
-                crate::parser::ast::Literal::String(s) => format!("\"{}\"", s),
+                crate::parser::ast::Literal::String(s) => format!("\"{}\"", s.replace("\"", "\\\"")),
                 crate::parser::ast::Literal::Boolean(bool) => bool.to_string(),
                 crate::parser::ast::Literal::Slice(slice) => {
                     let s_slice: Vec<String> = slice.into_iter().map(|arg| to_lua(arg, ind, false)).collect();

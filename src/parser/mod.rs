@@ -505,7 +505,7 @@ impl Parser {
                     TokenKind::ID(arg) => args.push(arg),
                     _ => unreachable!(),
                 }
-            }else if let Ok(arg) = self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot)) {
+            }else if let Ok(_) = self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot)) {
                 self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot))?;
                 self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot))?;
                 args.push("...".to_string());

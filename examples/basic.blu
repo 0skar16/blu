@@ -46,6 +46,7 @@ let b = {
         return "Hello world!";
     }]
 };
+let {a, d} = b;
 // Calling an index of a child inside a param
 let c = b.d[1]();
 // Testing the contents

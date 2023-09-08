@@ -1,4 +1,8 @@
-use crate::parser::ast::{AST, Statement, Operation, TableIndex, BluIterator, LoopOp};
+use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}};
+
+use fasthash::{murmur2::Hasher32, FastHasher};
+
+use crate::parser::ast::{AST, Statement, Operation, TableIndex, BluIterator, LoopOp, UnwrapTarget, LetTarget};
 
 pub fn compile(ast: AST) -> String {
     let mut buf = String::new();
@@ -29,14 +33,19 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
             buf.push('.');
             buf.push_str(&to_lua(*child, ind, false));
         },
-        Statement::Let(name, source) => {
-            buf.push_str("local ");
-            buf.push_str(&name);
-            if let Some(source) = source {
-                buf.push_str(" = ");
-                buf.push_str(&to_lua(*source, ind, false));
+        Statement::Let(target, source) => {
+            match target {
+                LetTarget::ID(name) => {
+                    buf.push_str("local ");
+                    buf.push_str(&name);
+                    if let Some(source) = source {
+                        buf.push_str(" = ");
+                        buf.push_str(&to_lua(*source, ind, false));
+                    }
+                    buf.push('\n');
+                },
+                LetTarget::Unwrap(targets) => buf.push_str(&resolve_unwrap(targets, *source.expect("Source of unwrap must be some"), ind, do_ind)),
             }
-            buf.push('\n');
         },
         Statement::Global(name, source) => {
             buf.push_str(&name);
@@ -241,5 +250,21 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
             buf.push_str(&format!("{}:{}", to_lua(*parent, ind, false), method));
         },
     }
+    buf
+}
+fn resolve_unwrap(unwrap: Vec<UnwrapTarget>, owner: Statement, ind: u8, do_ind: bool) -> String {
+    let mut buf = String::new();
+    let mut hasher = Hasher32::new();
+    owner.hash(&mut hasher);
+    let unwrapped_object = format!("unwrapped_object_{:x}", hasher.finish());
+    buf.push_str(&to_lua(Statement::Let(LetTarget::ID(unwrapped_object.clone()), Some(Box::new(owner))), ind, do_ind));
+    for target in unwrap {
+        match target {
+            UnwrapTarget::ID(id) => buf.push_str(&to_lua(Statement::Let(LetTarget::ID(id.clone()), Some(Box::new(Statement::Child(Box::new(Statement::Get(unwrapped_object.clone())), Box::new(Statement::Get(id)))))), ind, do_ind)),
+            UnwrapTarget::Unwrap(targets, id) => buf.push_str(&resolve_unwrap(targets, Statement::Child(Box::new(Statement::Get(unwrapped_object.clone())), Box::new(Statement::Get(id))), ind, do_ind)),
+            UnwrapTarget::Default(id) => buf.push_str(&to_lua(Statement::Let(LetTarget::ID(id), Some(Box::new(Statement::Child(Box::new(Statement::Get(unwrapped_object.clone())), Box::new(Statement::Get("__default".to_string())))))), ind, do_ind)),
+        }
+    }
+    buf.push_str(&to_lua(Statement::Assignment(Box::new(Statement::Get(unwrapped_object.clone())), Box::new(Statement::Nil)), ind, do_ind));
     buf
 }

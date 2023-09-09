@@ -1,8 +1,8 @@
-use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}};
+use std::hash::{Hash, Hasher};
 
 use fasthash::{murmur2::Hasher32, FastHasher};
 
-use crate::{parser::{ast::{AST, Statement, Operation, TableIndex, BluIterator, LoopOp, UnwrapTarget, LetTarget, ImportTarget}, Parser}, lexer::Lexer, parse, parse_standalone};
+use crate::{parser::ast::{AST, Statement, Operation, TableIndex, BluIterator, LoopOp, UnwrapTarget, LetTarget, ImportTarget}, parse, parse_standalone};
 
 pub fn compile(ast: AST) -> String {
     let mut buf = String::new();

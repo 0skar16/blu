@@ -2,13 +2,15 @@ use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}};
 
 use fasthash::{murmur2::Hasher32, FastHasher};
 
-use crate::parser::ast::{AST, Statement, Operation, TableIndex, BluIterator, LoopOp, UnwrapTarget, LetTarget};
+use crate::{parser::{ast::{AST, Statement, Operation, TableIndex, BluIterator, LoopOp, UnwrapTarget, LetTarget, ImportTarget}, Parser}, lexer::Lexer, parse, parse_standalone};
 
 pub fn compile(ast: AST) -> String {
     let mut buf = String::new();
+    buf.push_str("local __export = {}\n");
     for statement in ast.statements {
         buf.push_str(&to_lua(statement, 0, true))
     }
+    buf.push_str("return __export");
     buf
 }
 fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
@@ -249,6 +251,16 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
         Statement::Method(parent, method) => {
             buf.push_str(&format!("{}:{}", to_lua(*parent, ind, false), method));
         },
+        Statement::Import(target, source) => match target {
+            ImportTarget::Default(id) => buf.push_str(&to_lua(parse_standalone!("let {id} = require(\"{source}\").__default;"), ind, do_ind)),
+            ImportTarget::Unwrap(unwrap) => buf.push_str(&resolve_unwrap(unwrap, parse!("require(\"{source}\")"), ind, do_ind)),
+        },
+        Statement::Export(source, mut target) => {
+            if target == "default".to_string() {
+                target = "__default".to_string();
+            }
+            buf.push_str(&to_lua(Statement::Assignment(Box::new(parse!("__export.{target}")), source), ind, do_ind))
+        },
     }
     buf
 }
@@ -260,11 +272,12 @@ fn resolve_unwrap(unwrap: Vec<UnwrapTarget>, owner: Statement, ind: u8, do_ind: 
     buf.push_str(&to_lua(Statement::Let(LetTarget::ID(unwrapped_object.clone()), Some(Box::new(owner))), ind, do_ind));
     for target in unwrap {
         match target {
-            UnwrapTarget::ID(id) => buf.push_str(&to_lua(Statement::Let(LetTarget::ID(id.clone()), Some(Box::new(Statement::Child(Box::new(Statement::Get(unwrapped_object.clone())), Box::new(Statement::Get(id)))))), ind, do_ind)),
-            UnwrapTarget::Unwrap(targets, id) => buf.push_str(&resolve_unwrap(targets, Statement::Child(Box::new(Statement::Get(unwrapped_object.clone())), Box::new(Statement::Get(id))), ind, do_ind)),
-            UnwrapTarget::Default(id) => buf.push_str(&to_lua(Statement::Let(LetTarget::ID(id), Some(Box::new(Statement::Child(Box::new(Statement::Get(unwrapped_object.clone())), Box::new(Statement::Get("__default".to_string())))))), ind, do_ind)),
+            //UnwrapTarget::ID(id) => buf.push_str(&to_lua(Statement::Let(LetTarget::ID(id.clone()), Some(Box::new(Statement::Child(Box::new(Statement::Get(unwrapped_object.clone())), Box::new(Statement::Get(id)))))), ind, do_ind)),
+            UnwrapTarget::ID(id) => buf.push_str(&to_lua(parse_standalone!("let {id} = {unwrapped_object}.{id};"), ind, do_ind)),
+            UnwrapTarget::Unwrap(targets, id) => buf.push_str(&resolve_unwrap(targets, parse!("{unwrapped_object}.{id}"), ind, do_ind)),
+            //UnwrapTarget::Default(id) => buf.push_str(&to_lua(Statement::Let(LetTarget::ID(id), Some(Box::new(Statement::Child(Box::new(Statement::Get(unwrapped_object.clone())), Box::new(Statement::Get("__default".to_string())))))), ind, do_ind)),
+            UnwrapTarget::Default(id) => buf.push_str(&to_lua(parse_standalone!("let {id} = {unwrapped_object}.__default;"), ind, do_ind)),
         }
     }
-    buf.push_str(&to_lua(Statement::Assignment(Box::new(Statement::Get(unwrapped_object.clone())), Box::new(Statement::Nil)), ind, do_ind));
     buf
 }

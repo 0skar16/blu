@@ -1,6 +1,6 @@
 use crate::lexer::{Token, TokenKind, TokenKindDesc, Punctuation, Number};
 
-use self::ast::{AST, Statement, Block, Literal, Operation, TableIndex, BluIterator, LoopOp, UnwrapTarget, LetTarget};
+use self::ast::{AST, Statement, Block, Literal, Operation, TableIndex, BluIterator, LoopOp, UnwrapTarget, LetTarget, ImportTarget};
 pub mod ast;
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserError {
@@ -53,6 +53,8 @@ impl Parser {
                     "while" => self.parse_while(end)?,
                     "loop" => self.parse_loop(end)?,
                     "break" | "continue" => self.parse_loopop(end)?,
+                    "import" => self.parse_import(end)?,
+                    "export" => self.parse_export(end)?,
                     _ => return Err(ParserError::UnexpectedToken(tok)),
                 }
             },
@@ -60,7 +62,7 @@ impl Parser {
         })
     }
     
-    fn parse_statement(&mut self, end: usize) -> Result<Statement> {
+    pub fn parse_statement(&mut self, end: usize) -> Result<Statement> {
         let tok = self.peek(0, end)?;
 
         let pos = self.pos;
@@ -555,6 +557,23 @@ impl Parser {
             }))
         }
     }
+    fn parse_import(&mut self, end: usize) -> Result<Statement> {
+        self.eat_ex_kind(end, TokenKind::ID("import".to_string()))?;
+        let target = self.parse_import_target(end)?;
+        self.eat_ex_kind(end, TokenKind::ID("from".to_string()))?;
+        let source = match self.eat_ex(end, TokenKindDesc::String)?.token {
+            TokenKind::String(s) => s,
+            _ => unreachable!(),
+        };
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
+        Ok(Statement::Import(target, source))
+    }
+    fn parse_import_target(&mut self, end: usize) -> Result<ImportTarget> {
+        Ok(match self.parse_let_target(end)? {
+            LetTarget::ID(name) => ImportTarget::Default(name),
+            LetTarget::Unwrap(unwrap) => ImportTarget::Unwrap(unwrap),
+        })
+    }
     fn parse_unwrap(&mut self, end: usize) -> Result<Vec<UnwrapTarget>> {
         let mut entries = vec![];
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftBracket))?;
@@ -598,6 +617,18 @@ impl Parser {
                 UnwrapTarget::ID(id)
             })
         }
+    }
+    fn parse_export(&mut self, end: usize) -> Result<Statement> {
+        self.eat_ex_kind(end, TokenKind::ID("export".to_string()))?;
+        let _end = self.to_first_minding_blocks(end, TokenKind::ID("as".to_string()))?;
+        let source = self.parse_statement(_end)?;
+        self.eat_ex_kind(end, TokenKind::ID("as".to_string()))?;
+        let target = match self.eat_ex(end, TokenKindDesc::ID)?.token {
+            TokenKind::ID(id) => id,
+            _ => unreachable!(),
+        };
+        self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
+        Ok(Statement::Export(Box::new(source), target))
     }
     fn parse_if(&mut self, end: usize) -> Result<Statement> {
         self.eat_ex_kind(end, TokenKind::ID("if".to_string()))?;
@@ -893,4 +924,32 @@ impl Parser {
         }
         Ok(self.token_stream[self.pos+offset].clone())
     }
+}
+#[macro_export]
+macro_rules! parser {
+    ($($arg:tt)*) => {
+        {
+            let token_stream = $crate::lexer::Lexer::new(format!($($arg)*).chars()).tokenize().expect("Should be able to tokenize");
+            let end = token_stream.len();
+            ($crate::parser::Parser::new(token_stream), end)
+        }
+    };
+}
+#[macro_export]
+macro_rules! parse_standalone {
+    ($($arg:tt)*) => {
+        {
+            let (mut parser, end) = $crate::parser!($($arg)*);
+            parser.parse_standalone_statement(end).expect("Should parse")
+        }
+    };
+}
+#[macro_export]
+macro_rules! parse {
+    ($($arg:tt)*) => {
+        {
+            let (mut parser, end) = $crate::parser!($($arg)*);
+            parser.parse_statement(end).expect("Should parse")
+        }
+    };
 }

@@ -28,11 +28,18 @@ pub enum Statement {
     Paren(Box<Statement>),
     Index(Box<Statement>, Box<Statement>),
     LoopOperation(LoopOp),
+    Import(ImportTarget, String),
+    Export(Box<Statement>, String),
     Nil,
 }
 #[derive(Debug, Clone, PartialEq, Hash)]
 pub enum LetTarget {
     ID(String),
+    Unwrap(Vec<UnwrapTarget>),
+}
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub enum ImportTarget {
+    Default(String),
     Unwrap(Vec<UnwrapTarget>),
 }
 #[derive(Debug, Clone, PartialEq, Hash)]

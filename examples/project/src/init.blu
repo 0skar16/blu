@@ -1,2 +1,2 @@
 print("This is the project example!");
-return 8;
+export 8 as default;

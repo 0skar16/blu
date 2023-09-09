@@ -1,2 +1,3 @@
+import project from "modules.project";
 print("This is the inclusion example!");
-print(require("modules.project"));
+print(project);

@@ -1,9 +1,9 @@
 // Function creating test
 fn test_function(arg) {
     // Literals and locals
-    let c = !(a > 0 && a < 3) && b && !false;
     let a = -1;
     let b = true;
+    let c = !(a > 0 && a < 3) && b && !false;
     // Basic operations and if test
     if(a > 0 && b && !false) {
         // Assignment
@@ -104,3 +104,15 @@ fn b:test_method() {
     print("This is a method!");
 }
 b:test_method();
+
+// Match?
+let abc = "abbccbc";
+
+for i in 0..#abc {
+    let c = abc:sub(i,i);
+    match c {
+        "a" => print("1"),
+        "b" => print("2"),
+        _ => print("3"),
+    }
+}

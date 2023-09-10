@@ -1,9 +1,12 @@
-use std::{str::Chars, fmt::{Debug, Write}};
 use crate::{throw_unexpected_char, try_next_char};
+use std::{
+    fmt::{Debug, Write},
+    str::Chars,
+};
 #[derive(Debug, Clone, PartialEq)]
 pub enum LexerError {
     UnexpectedChar(char, u32, u32),
-    UnexpectedEof(u32,u32),
+    UnexpectedEof(u32, u32),
     ExpectedCharNotExisting(char, u32, u32),
 }
 pub type Result<T> = std::result::Result<T, LexerError>;
@@ -33,73 +36,182 @@ impl Lexer {
         Ok(self.token_stream)
     }
     fn next_token(&mut self) -> (Result<Token>, bool) {
-        if self.chars.len()-self.pos <= 0 {
+        self.skip_unneeded();
+        if self.chars.len() - self.pos <= 0 {
             return (Ok(Token::new(self, TokenKind::_Eof, "".to_string())), true);
         }
-        self.skip_unneeded();
         let tok = match try_next_char!(self) {
-            '/' => {
-                match self.peek_char(0) {
-                    Some('/') => {
-                        try_next_char!(self);
-                        self.take_until("\n");
-                        return self.next_token();
-                    },
-                    Some('*') => {
-                        try_next_char!(self);
-                        self.take_until("*/");
-                        return self.next_token();
-                    }
-                    _ => Token::new(self, TokenKind::Punctuation(Punctuation::Div), "/".to_string()),
+            '/' => match self.peek_char(0) {
+                Some('/') => {
+                    try_next_char!(self);
+                    self.take_until("\n");
+                    return self.next_token();
                 }
+                Some('*') => {
+                    try_next_char!(self);
+                    self.take_until("*/");
+                    return self.next_token();
+                }
+                _ => Token::new(
+                    self,
+                    TokenKind::Punctuation(Punctuation::Div),
+                    "/".to_string(),
+                ),
             },
             '&' => {
                 match self.peek_char(0) {
                     Some('&') => {
                         try_next_char!(self);
-                        return (Ok(Token::new(self, TokenKind::Punctuation(Punctuation::And), "&&".to_string())), false);
-                    },
-                    _ => {},
+                        return (
+                            Ok(Token::new(
+                                self,
+                                TokenKind::Punctuation(Punctuation::And),
+                                "&&".to_string(),
+                            )),
+                            false,
+                        );
+                    }
+                    _ => {}
                 }
-                return (Err(LexerError::ExpectedCharNotExisting('&', self.col, self.line)), false);
-            },
+                return (
+                    Err(LexerError::ExpectedCharNotExisting(
+                        '&', self.col, self.line,
+                    )),
+                    false,
+                );
+            }
             '|' => {
                 match self.peek_char(0) {
                     Some('|') => {
                         try_next_char!(self);
-                        return (Ok(Token::new(self, TokenKind::Punctuation(Punctuation::Or), "||".to_string())), false);
+                        return (
+                            Ok(Token::new(
+                                self,
+                                TokenKind::Punctuation(Punctuation::Or),
+                                "||".to_string(),
+                            )),
+                            false,
+                        );
                     }
-                    _ => {},
+                    _ => {}
                 }
-                return (Err(LexerError::ExpectedCharNotExisting('|', self.col, self.line)), false);
-            },
+                return (
+                    Ok(Token::new(
+                        self,
+                        TokenKind::Punctuation(Punctuation::BitwiseOr),
+                        "|".to_string(),
+                    )),
+                    false,
+                );
+            }
             '"' => {
                 let s = self.take_until("\"");
-                Token::new(self, TokenKind::String(s.clone()), format!("\"{}\"",s))
-            },
+                Token::new(self, TokenKind::String(s.clone()), format!("\"{}\"", s))
+            }
             '`' => {
                 let s = self.take_until("`");
-                Token::new(self, TokenKind::String(s.clone()), format!("`{}`",s))
-            },
-            '-' => Token::new(self, TokenKind::Punctuation(Punctuation::Sub), "-".to_string()),
-            '{' => Token::new(self, TokenKind::Punctuation(Punctuation::LeftBracket), "{".to_string()),
-            '}' => Token::new(self, TokenKind::Punctuation(Punctuation::RightBracket), "}".to_string()),
-            '(' => Token::new(self, TokenKind::Punctuation(Punctuation::LeftParen), "(".to_string()),
-            ')' => Token::new(self, TokenKind::Punctuation(Punctuation::RightParen), ")".to_string()),
-            '[' => Token::new(self, TokenKind::Punctuation(Punctuation::LeftSBracket), "[".to_string()),
-            ']' => Token::new(self, TokenKind::Punctuation(Punctuation::RightSBracket), "]".to_string()),
-            '.' => Token::new(self, TokenKind::Punctuation(Punctuation::Dot), ".".to_string()),
-            ':' => Token::new(self, TokenKind::Punctuation(Punctuation::Colon), ":".to_string()),
-            ';' => Token::new(self, TokenKind::Punctuation(Punctuation::Semicolon), ";".to_string()),
-            '%' => Token::new(self, TokenKind::Punctuation(Punctuation::Mod), "%".to_string()),
-            '*' => Token::new(self, TokenKind::Punctuation(Punctuation::Mul), "*".to_string()),
-            ',' => Token::new(self, TokenKind::Punctuation(Punctuation::Comma), ",".to_string()),
-            '+' => Token::new(self, TokenKind::Punctuation(Punctuation::Plus), "+".to_string()),
-            '^' => Token::new(self, TokenKind::Punctuation(Punctuation::Exp), "^".to_string()),
-            '!' => Token::new(self, TokenKind::Punctuation(Punctuation::Not), "!".to_string()),
-            '<' => Token::new(self, TokenKind::Punctuation(Punctuation::LeftArrow), "<".to_string()),
-            '>' => Token::new(self, TokenKind::Punctuation(Punctuation::RightArrow), ">".to_string()),
-            '=' => Token::new(self, TokenKind::Punctuation(Punctuation::Equals), "=".to_string()),
+                Token::new(self, TokenKind::String(s.clone()), format!("`{}`", s))
+            }
+            '-' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::Sub),
+                "-".to_string(),
+            ),
+            '{' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::LeftBracket),
+                "{".to_string(),
+            ),
+            '}' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::RightBracket),
+                "}".to_string(),
+            ),
+            '(' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::LeftParen),
+                "(".to_string(),
+            ),
+            ')' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::RightParen),
+                ")".to_string(),
+            ),
+            '[' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::LeftSBracket),
+                "[".to_string(),
+            ),
+            ']' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::RightSBracket),
+                "]".to_string(),
+            ),
+            '.' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::Dot),
+                ".".to_string(),
+            ),
+            ':' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::Colon),
+                ":".to_string(),
+            ),
+            ';' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::Semicolon),
+                ";".to_string(),
+            ),
+            '%' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::Mod),
+                "%".to_string(),
+            ),
+            '*' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::Mul),
+                "*".to_string(),
+            ),
+            ',' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::Comma),
+                ",".to_string(),
+            ),
+            '+' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::Plus),
+                "+".to_string(),
+            ),
+            '^' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::Exp),
+                "^".to_string(),
+            ),
+            '!' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::Not),
+                "!".to_string(),
+            ),
+            '<' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::LeftArrow),
+                "<".to_string(),
+            ),
+            '>' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::RightArrow),
+                ">".to_string(),
+            ),
+            '=' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::Equals),
+                "=".to_string(),
+            ),
+            '#' => Token::new(
+                self,
+                TokenKind::Punctuation(Punctuation::Hash),
+                "#".to_string(),
+            ),
             c => {
                 if c == '0' && let Some(char) = self.peek_char(0) && (char == 'x' || char == 'X') {
                     let _ = self.next_char();
@@ -119,26 +231,40 @@ impl Lexer {
                             break;
                         }
                         let char = chars[i];
-                        
+
                         if char == '.' {
-                            dot_n +=1;
+                            dot_n += 1;
                         }
-                        i+=1;
+                        i += 1;
                         if i < chars.len() && dot_n > 0 && !chars[i].is_numeric() {
-                            dot_n-=1;
-                            i-=1;
-                            self.pos-=a-i;
+                            dot_n -= 1;
+                            i -= 1;
+                            self.pos -= a - i;
                             break;
                         }
                     }
                     let number = String::from_iter(&chars[..i]);
                     if dot_n == 1 {
                         if let Ok(num) = number.parse() {
-                            return (Ok(Token::new(self, TokenKind::Number(Number::Float(num)), number)), false);
+                            return (
+                                Ok(Token::new(
+                                    self,
+                                    TokenKind::Number(Number::Float(num)),
+                                    number,
+                                )),
+                                false,
+                            );
                         }
-                    }else if dot_n == 0 {
+                    } else if dot_n == 0 {
                         if let Ok(num) = number.parse() {
-                            return (Ok(Token::new(self, TokenKind::Number(Number::Int(num)), number)), false);
+                            return (
+                                Ok(Token::new(
+                                    self,
+                                    TokenKind::Number(Number::Int(num)),
+                                    number,
+                                )),
+                                false,
+                            );
                         }
                     }
                 }
@@ -148,7 +274,7 @@ impl Lexer {
                     return (Ok(Token::new(self, TokenKind::ID(id.clone()), id)), false);
                 }
                 throw_unexpected_char!(c, self)
-            },
+            }
         };
         (Ok(tok), false)
     }
@@ -164,14 +290,14 @@ impl Lexer {
             if let Ok(char) = self.next_char_unchecked() {
                 if char == pattern[pos] {
                     buf.push(char);
-                    pos+=1;
-                }else{
+                    pos += 1;
+                } else {
                     out.push_str(&buf);
                     pos = 0;
                     out.push(char);
                     buf.clear();
                 }
-            }else{
+            } else {
                 break;
             }
         }
@@ -188,14 +314,14 @@ impl Lexer {
         while let Some(char) = self.peek_char(0) {
             if char == ' ' || char == '\t' || char == '\n' {
                 let _ = self.next_char_unchecked();
-            }else{
+            } else {
                 break;
             }
         }
     }
     fn next_char_unchecked(&mut self) -> Result<char> {
-        if self.chars.len()-self.pos <= 0 {
-            return Err(LexerError::UnexpectedEof(self.line, self.col-1))
+        if self.chars.len() - self.pos <= 0 {
+            return Err(LexerError::UnexpectedEof(self.line, self.col - 1));
         }
         let char = self.chars[self.pos];
         self.pos += 1;
@@ -216,13 +342,13 @@ impl Lexer {
         char
     }
     fn peek_char(&self, offset: i32) -> Option<char> {
-        if (self.chars.len()-self.pos) as i32-offset <= 0 {
+        if (self.chars.len() - self.pos) as i32 - offset <= 0 {
             return None;
         }
-        if self.pos as i32+offset < 0 {
+        if self.pos as i32 + offset < 0 {
             return None;
         }
-        Some(self.chars[(self.pos as i32+offset) as usize])
+        Some(self.chars[(self.pos as i32 + offset) as usize])
     }
 }
 
@@ -272,7 +398,7 @@ impl Debug for TokenStream {
     }
 }
 #[derive(Debug, Clone, PartialEq)]
-pub enum TokenKind{
+pub enum TokenKind {
     ID(String),
     String(String),
     Punctuation(Punctuation),
@@ -332,6 +458,8 @@ pub enum Punctuation {
     LeftArrow,
     RightArrow,
     Equals,
+    Hash,
+    BitwiseOr,
 }
 impl Punctuation {
     pub fn is_operation(&self) -> bool {
@@ -356,21 +484,21 @@ pub enum Number {
 }
 #[macro_export]
 macro_rules! try_next_char {
-    ($self:expr) => {
-        {
-            let next_char = $self.next_char();
-            if let Ok(char) = next_char {
-                char
-            }else{
-                return (Err(next_char.err().unwrap()), false);
-            }
+    ($self:expr) => {{
+        let next_char = $self.next_char();
+        if let Ok(char) = next_char {
+            char
+        } else {
+            return (Err(next_char.err().unwrap()), false);
         }
-        
-    };
+    }};
 }
 #[macro_export]
 macro_rules! throw_unexpected_char {
     ($char:expr, $lex:expr) => {
-        return (Err(LexerError::UnexpectedChar($char, $lex.line, $lex.col-1)), false)
+        return (
+            Err(LexerError::UnexpectedChar($char, $lex.line, $lex.col - 1)),
+            false,
+        )
     };
 }

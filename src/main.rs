@@ -1,12 +1,20 @@
 #![feature(fs_try_exists)]
 #![feature(let_chains)]
 #![feature(path_file_prefix)]
-use std::{path::PathBuf, env::{current_dir, set_current_dir}, process::{Command, exit}};
-use anyhow::{Result, bail};
-use blu::{parser::{Parser as BluParser, ParserError}, lexer::{Lexer, LexerError}};
-use clap::{Parser, Subcommand, Args};
+use anyhow::{bail, Result};
+use blu::{
+    lexer::{Lexer, LexerError},
+    parser::{Parser as BluParser, ParserError},
+};
+use clap::{Args, Parser, Subcommand};
 use colored::Colorize;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::{
+    env::{current_dir, set_current_dir},
+    path::PathBuf,
+    process::{exit, Command},
+    time::Instant,
+};
 use walkdir::WalkDir;
 #[derive(Parser, Debug)]
 #[command(author, version, about="A compiler for the Blu language", long_about = None)]
@@ -15,24 +23,18 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(Subcommand,Debug)]
+#[derive(Subcommand, Debug)]
 enum Commands {
-    New{
-        name: PathBuf,
-    },
-    Build{
-
-    },
-    Init{
-        
-    },
+    New { name: PathBuf },
+    Build {},
+    Init {},
     Compile(CompileArgs),
 }
 
-#[derive(Args,Debug)]
+#[derive(Args, Debug)]
 struct CompileArgs {
     input: PathBuf,
-    #[arg(long,short)]
+    #[arg(long, short)]
     output: String,
 }
 fn main() -> Result<()> {
@@ -40,7 +42,7 @@ fn main() -> Result<()> {
         let blu = home.join(".blu");
         std::fs::create_dir_all(blu.join("modules"))?;
         Some(blu)
-    }else{
+    } else {
         None
     };
     let cli = Cli::try_parse()?;
@@ -49,43 +51,65 @@ fn main() -> Result<()> {
             let code = std::fs::read_to_string(&input)?;
             let filename = if let Some(str) = input.file_name() {
                 str.to_string_lossy().to_string()
-            }else {
+            } else {
                 "N/A".to_string()
             };
+            let lex_start = Instant::now();
             let token_stream = map_lexer_err!(Lexer::new(code.chars()).tokenize(), filename);
+            println!("Lex: {}", (Instant::now() - lex_start).as_micros());
+            let parse_start = Instant::now();
             let ast = map_parser_err!(BluParser::new(token_stream).parse(), filename);
+            println!("Parse: {}", (Instant::now() - parse_start).as_micros());
+
+            let compile_start = Instant::now();
             let compiled = blu::compiler::compile(ast);
+            println!("Compile: {}", (Instant::now() - compile_start).as_micros());
             if output == "-" {
                 print!("{}", compiled);
-            }else{
+            } else {
                 std::fs::write(output, compiled)?;
             }
-        },
+        }
         Commands::New { name } => {
             let mut filename = "unknown".to_string();
             if let Some(str) = name.to_string_lossy().to_string().split("/").last() {
                 filename = str.to_string();
             }
-            println!("{} new project, named: {}", "Creating".green().bold(), filename);
+            println!(
+                "{} new project, named: {}",
+                "Creating".green().bold(),
+                filename
+            );
             std::fs::create_dir_all(name.join("src"))?;
             std::fs::create_dir_all(name.join("target"))?;
-            std::fs::write(name.join("blu.yml"), format!(include_str!("default_blu.yml"), filename))?;
+            std::fs::write(
+                name.join("blu.yml"),
+                format!(include_str!("default_blu.yml"), filename),
+            )?;
             std::fs::write(name.join("src/main.blu"), "print(\"Hello world!\");")?;
-        },
-        Commands::Build {  } => {
+        }
+        Commands::Build {} => {
             let dir = current_dir()?;
             if !std::fs::try_exists(dir.join("blu.yml"))? {
                 bail!("Blu manifest isn't in the current directory!");
             }
             let _ = std::fs::remove_dir_all(dir.join("target"));
             std::fs::create_dir_all(dir.join("target"))?;
-            let manifest: BluManifest = serde_yaml::from_reader(std::fs::File::open(dir.join("blu.yml"))?)?;
+            let manifest: BluManifest =
+                serde_yaml::from_reader(std::fs::File::open(dir.join("blu.yml"))?)?;
             set_current_dir(dir.join("target"))?;
             for cmd in manifest.pre_compile {
-                let out = Command::new("/usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                let out = Command::new("/usr/bin/sh")
+                    .args(["-c", &format!("\"{:?}\"", cmd)])
+                    .output()?;
                 let str = std::str::from_utf8(&out.stderr);
                 if !out.status.success() {
-                    err!(format!("Pre compile command `{}` in [{}] erorred!\n\t{}", cmd, manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t")));
+                    err!(format!(
+                        "Pre compile command `{}` in [{}] erorred!\n\t{}",
+                        cmd,
+                        manifest.name,
+                        str.unwrap_or("Couldn't decode!").replace("\n", "\n\t")
+                    ));
                 }
             }
 
@@ -102,39 +126,68 @@ fn main() -> Result<()> {
                         None
                     };
                     if let Some(path) = path {
-                        let mod_manifest: BluManifest = serde_yaml::from_reader(std::fs::File::open(path.join("blu.yml"))?)?;
-                        std::fs::create_dir_all(dir.join("target").join("modules").join(&mod_manifest.name))?;
-                        set_current_dir(dir.join("target").join("modules").join(&mod_manifest.name))?;
+                        let mod_manifest: BluManifest =
+                            serde_yaml::from_reader(std::fs::File::open(path.join("blu.yml"))?)?;
+                        std::fs::create_dir_all(
+                            dir.join("target").join("modules").join(&mod_manifest.name),
+                        )?;
+                        set_current_dir(
+                            dir.join("target").join("modules").join(&mod_manifest.name),
+                        )?;
                         for cmd in mod_manifest.pre_compile {
-                            let out = Command::new("/usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                            let out = Command::new("/usr/bin/sh")
+                                .args(["-c", &format!("\"{:?}\"", cmd)])
+                                .output()?;
                             let str = std::str::from_utf8(&out.stderr);
                             if !out.status.success() {
-                                err!(format!("Pre compile command `{}` in [{}] erorred!\n\t{}", cmd, manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t")));
+                                err!(format!(
+                                    "Pre compile command `{}` in [{}] erorred!\n\t{}",
+                                    cmd,
+                                    manifest.name,
+                                    str.unwrap_or("Couldn't decode!").replace("\n", "\n\t")
+                                ));
                             }
                         }
                         set_current_dir(&dir)?;
-                        build_dir(path.join("src"), dir.join("target").join("modules").join(&mod_manifest.name))?;
+                        build_dir(
+                            path.join("src"),
+                            dir.join("target").join("modules").join(&mod_manifest.name),
+                        )?;
                         for cmd in mod_manifest.post_compile {
-                            let out = Command::new("/usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                            let out = Command::new("/usr/bin/sh")
+                                .args(["-c", &format!("\"{:?}\"", cmd)])
+                                .output()?;
                             let str = std::str::from_utf8(&out.stderr);
                             if !out.status.success() {
-                                err!(format!("Post compile command `{}` in [{}] erorred!\n\t{}", cmd, mod_manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t")));
+                                err!(format!(
+                                    "Post compile command `{}` in [{}] erorred!\n\t{}",
+                                    cmd,
+                                    mod_manifest.name,
+                                    str.unwrap_or("Couldn't decode!").replace("\n", "\n\t")
+                                ));
                             }
                         }
-                    }else{
+                    } else {
                         bail!("Couldn't locate the path for module {}", include.name);
                     }
                 }
             }
             set_current_dir(dir.join("target"))?;
             for cmd in manifest.post_compile {
-                let out = Command::new("/usr/bin/sh").args(["-c", &format!("\"{:?}\"", cmd)]).output()?;
+                let out = Command::new("/usr/bin/sh")
+                    .args(["-c", &format!("\"{:?}\"", cmd)])
+                    .output()?;
                 let str = std::str::from_utf8(&out.stderr);
                 if !out.status.success() {
-                    err!(format!("Post compile command `{}` in [{}] erorred!\n\t{}", cmd, manifest.name, str.unwrap_or("Couldn't decode!").replace("\n", "\n\t")));
+                    err!(format!(
+                        "Post compile command `{}` in [{}] erorred!\n\t{}",
+                        cmd,
+                        manifest.name,
+                        str.unwrap_or("Couldn't decode!").replace("\n", "\n\t")
+                    ));
                 }
             }
-        },
+        }
         Commands::Init {} => {
             let dir = current_dir()?;
             let mut filename = "unknown".to_string();
@@ -143,9 +196,12 @@ fn main() -> Result<()> {
             }
             std::fs::create_dir_all(dir.join("src"))?;
             std::fs::create_dir_all(dir.join("target"))?;
-            std::fs::write(dir.join("blu.yml"), format!(include_str!("default_blu.yml"), filename))?;
+            std::fs::write(
+                dir.join("blu.yml"),
+                format!(include_str!("default_blu.yml"), filename),
+            )?;
             std::fs::write(dir.join("src/init.blu"), "print(\"Hello world!\");")?;
-        },
+        }
     }
     Ok(())
 }
@@ -156,12 +212,12 @@ struct BluManifest {
     include: Vec<Inclusion>,
     compile: BuildType,
     pre_compile: Vec<String>,
-    post_compile: Vec<String>
+    post_compile: Vec<String>,
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum BuildType {
     #[serde(rename = "tree")]
-    Tree
+    Tree,
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Inclusion {
@@ -218,16 +274,17 @@ macro_rules! map_parser_err {
                 ParserError::UnexpectedEos => format!("Parser errored:\n\tUnexpected end of Token Stream"),
                 ParserError::UnexpectedEosEx(tk) => format!("Parser errored:\n\tUnexpected end of Token Stream, expected: [{:?}]", tk),
                 ParserError::UnexpectedEosExKind(tk) => format!("Parser errored:\n\tUnexpected end of Token Stream, expected: [{:?}]", tk),
+                ParserError::DoubleDefaultCase(col, line) => format!("Parser errored:\n\tUnexpected double default case of a match statement: [{}:{col}:{line}]", $filename),
             };
             err!(error);
-            
+
         }).unwrap()
     };
 }
 #[macro_export]
 macro_rules! err {
     ($error:expr) => {
-        eprintln!("   {}: {}","error".red().bold(), $error);
+        eprintln!("   {}: {}", "error".red().bold(), $error);
         exit(1);
     };
 }

@@ -1,6 +1,5 @@
 use std::hash::Hash;
 
-
 #[derive(Debug, Clone, Hash)]
 pub struct AST {
     pub statements: Vec<Statement>,
@@ -24,13 +23,29 @@ pub enum Statement {
     For(BluIterator, Block),
     While(Box<Statement>, Block),
     Loop(Box<Statement>, Block),
-    If(Box<Statement>, Block, Vec<(Statement, Block)>, Option<Block>),
+    If(
+        Box<Statement>,
+        Block,
+        Vec<(Statement, Block)>,
+        Option<Block>,
+    ),
     Paren(Box<Statement>),
     Index(Box<Statement>, Box<Statement>),
     LoopOperation(LoopOp),
     Import(ImportTarget, String),
     Export(Box<Statement>, String),
+    Match(
+        Box<Statement>,
+        Vec<(Vec<Literal>, MatchOutput)>,
+        Option<MatchOutput>,
+    ),
     Nil,
+}
+
+#[derive(Debug, Clone, Hash)]
+pub enum MatchOutput {
+    Block(Block),
+    Statement(Box<Statement>),
 }
 #[derive(Debug, Clone, PartialEq, Hash)]
 pub enum LetTarget {
@@ -56,7 +71,7 @@ pub enum LoopOp {
 #[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub enum CommentType {
     SingleLine,
-    MultiLine
+    MultiLine,
 }
 #[derive(Debug, Clone, Hash)]
 pub enum TableIndex {
@@ -86,6 +101,8 @@ pub enum Operation {
     Exp,
     Not,
     StringAdd,
+    Len,
+    Arrow,
 }
 #[derive(Debug, Clone)]
 pub enum Literal {
@@ -108,7 +125,12 @@ impl Hash for Literal {
 
 #[derive(Debug, Clone, Hash)]
 pub enum BluIterator {
-    Numerical(String, Box<Statement>, Box<Statement>, Option<Box<Statement>>),
+    Numerical(
+        String,
+        Box<Statement>,
+        Box<Statement>,
+        Option<Box<Statement>>,
+    ),
     Each(Vec<String>, Box<Statement>),
     Iterator(Vec<String>, Box<Statement>),
-} 
+}

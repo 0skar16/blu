@@ -116,3 +116,4 @@ for i in 0..#abc {
         _ => print("3"),
     }
 }
+let {a, b: _b, c: {f, g: h}, default: def} = x;

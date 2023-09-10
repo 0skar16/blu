@@ -403,7 +403,6 @@ fn resolve_unwrap(unwrap: Vec<UnwrapTarget>, owner: Statement, ind: u8, do_ind: 
     ));
     for target in unwrap {
         match target {
-            //UnwrapTarget::ID(id) => buf.push_str(&to_lua(Statement::Let(LetTarget::ID(id.clone()), Some(Box::new(Statement::Child(Box::new(Statement::Get(unwrapped_object.clone())), Box::new(Statement::Get(id)))))), ind, do_ind)),
             UnwrapTarget::ID(id) => buf.push_str(&to_lua(
                 parse_standalone!("let {id} = {unwrapped_object}.{id};"),
                 ind,
@@ -415,9 +414,8 @@ fn resolve_unwrap(unwrap: Vec<UnwrapTarget>, owner: Statement, ind: u8, do_ind: 
                 ind,
                 do_ind,
             )),
-            //UnwrapTarget::Default(id) => buf.push_str(&to_lua(Statement::Let(LetTarget::ID(id), Some(Box::new(Statement::Child(Box::new(Statement::Get(unwrapped_object.clone())), Box::new(Statement::Get("__default".to_string())))))), ind, do_ind)),
-            UnwrapTarget::Default(id) => buf.push_str(&to_lua(
-                parse_standalone!("let {id} = {unwrapped_object}.__default;"),
+            UnwrapTarget::ReassignID(id, new_id) => buf.push_str(&to_lua(
+                parse_standalone!("let {new_id} = {unwrapped_object}.{id};"),
                 ind,
                 do_ind,
             )),

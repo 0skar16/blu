@@ -14,6 +14,7 @@ pub enum ParserError {
     UnexpectedEosEx(TokenKindDesc),
     UnexpectedEosExKind(TokenKind),
     DoubleDefaultCase(u32, u32),
+    DefaultUnreassigned(u32, u32),
 }
 pub type Result<T> = std::result::Result<T, ParserError>;
 pub struct Parser {
@@ -592,8 +593,9 @@ impl Parser {
         let mut entries = vec![];
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftBracket))?;
         let __end = self.isolate_block(end)?;
+
         loop {
-            let _end = self.to_first(__end, TokenKind::Punctuation(Punctuation::Comma))?;
+            let _end = self.to_first_minding_blocks(__end, TokenKind::Punctuation(Punctuation::Comma))?;
             if _end - self.pos <= 0 {
                 break;
             }
@@ -607,30 +609,36 @@ impl Parser {
         Ok(entries)
     }
     fn parse_unwrap_target(&mut self, end: usize) -> Result<UnwrapTarget> {
-        if self.peek(0, end)?.token == TokenKind::Punctuation(Punctuation::LeftBracket) {
-            let unwrapped = self.parse_unwrap(end)?;
-            self.eat_ex_kind(end, TokenKind::ID("of".to_string()))?;
-            let id = match self.eat_ex(end, TokenKindDesc::ID)?.token {
-                TokenKind::ID(id) => id,
-                _ => unreachable!(),
-            };
-            Ok(UnwrapTarget::Unwrap(unwrapped, id))
-        } else {
-            let id = match self.eat_ex(end, TokenKindDesc::ID)?.token {
-                TokenKind::ID(id) => id,
-                _ => unreachable!(),
-            };
-            Ok(if id == "default".to_string() {
-                self.eat_ex_kind(end, TokenKind::ID("as".to_string()))?;
-                let id = match self.eat_ex(end, TokenKindDesc::ID)?.token {
-                    TokenKind::ID(id) => id,
-                    _ => unreachable!(),
-                };
-                UnwrapTarget::Default(id)
-            } else {
-                UnwrapTarget::ID(id)
-            })
+        let mut id = match self.eat_ex(end, TokenKindDesc::ID)?.token {
+            TokenKind::ID(id) => id,
+            _ => unreachable!(),
+        };
+        if id == "default".to_string() {
+            id = "__default".to_string();
         }
+        let rid_tok = self.peek(0, end+1)?;
+        let replacement_id = if end > self.pos && self.peek(0, end)?.token == TokenKind::Punctuation(Punctuation::Colon) {
+            self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Colon))?;
+            if self.peek(0, end)?.token == TokenKind::Punctuation(Punctuation::LeftBracket) {
+                let unwrapped = self.parse_unwrap(end)?;
+                return Ok(UnwrapTarget::Unwrap(unwrapped, id));
+            }
+            Some(match self.eat_ex(end, TokenKindDesc::ID)?.token {
+                TokenKind::ID(id) => id,
+                _ => unreachable!(),
+            })
+        }else{None};
+        if id == "default".to_string() {
+            if replacement_id.is_none() {
+                return Err(ParserError::DefaultUnreassigned(rid_tok.line, rid_tok.col))
+            }
+        }
+        Ok(if let Some(new_id) = replacement_id {
+            UnwrapTarget::ReassignID(id, new_id)
+        }else{
+            UnwrapTarget::ID(id)
+        })
+        
     }
     fn parse_export(&mut self, end: usize) -> Result<Statement> {
         self.eat_ex_kind(end, TokenKind::ID("export".to_string()))?;
@@ -802,8 +810,8 @@ impl Parser {
                 let output = self.parse_match_output(__end)?;
                 if default_case.is_some() {
                     return Err(ParserError::DoubleDefaultCase(
-                        match_tok.col,
                         match_tok.line,
+                        match_tok.col,
                     ));
                 }
                 default_case = Some(output);

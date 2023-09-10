@@ -54,16 +54,9 @@ fn main() -> Result<()> {
             } else {
                 "N/A".to_string()
             };
-            let lex_start = Instant::now();
             let token_stream = map_lexer_err!(Lexer::new(code.chars()).tokenize(), filename);
-            println!("Lex: {}", (Instant::now() - lex_start).as_micros());
-            let parse_start = Instant::now();
             let ast = map_parser_err!(BluParser::new(token_stream).parse(), filename);
-            println!("Parse: {}", (Instant::now() - parse_start).as_micros());
-
-            let compile_start = Instant::now();
             let compiled = blu::compiler::compile(ast);
-            println!("Compile: {}", (Instant::now() - compile_start).as_micros());
             if output == "-" {
                 print!("{}", compiled);
             } else {
@@ -274,7 +267,8 @@ macro_rules! map_parser_err {
                 ParserError::UnexpectedEos => format!("Parser errored:\n\tUnexpected end of Token Stream"),
                 ParserError::UnexpectedEosEx(tk) => format!("Parser errored:\n\tUnexpected end of Token Stream, expected: [{:?}]", tk),
                 ParserError::UnexpectedEosExKind(tk) => format!("Parser errored:\n\tUnexpected end of Token Stream, expected: [{:?}]", tk),
-                ParserError::DoubleDefaultCase(col, line) => format!("Parser errored:\n\tUnexpected double default case of a match statement: [{}:{col}:{line}]", $filename),
+                ParserError::DoubleDefaultCase(line, col) => format!("Parser errored:\n\tUnexpected double default case of a match statement: [{}:{line}:{col}]", $filename),
+                ParserError::DefaultUnreassigned(line, col) => format!("Parser errored:\n\tWhen unwrapping default you should reassigned it to another id: [{}:{line}:{col}]", $filename),
             };
             err!(error);
 

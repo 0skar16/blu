@@ -106,14 +106,13 @@ fn b:test_method() {
 b:test_method();
 
 // Match?
-let abc = "abbccbc";
+let abc = "abbccbcdd";
 
 for i in 0..#abc {
     let c = abc:sub(i,i);
     match c {
         "a" => print("1"),
-        "b" => print("2"),
+        "b" | "d" => print("2"),
         _ => print("3"),
     }
 }
-let {a, b: _b, c: {f, g: h}, default: def} = x;

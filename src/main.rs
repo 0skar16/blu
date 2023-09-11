@@ -13,7 +13,6 @@ use std::{
     env::{current_dir, set_current_dir},
     path::PathBuf,
     process::{exit, Command},
-    time::Instant,
 };
 use walkdir::WalkDir;
 #[derive(Parser, Debug)]

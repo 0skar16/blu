@@ -595,7 +595,8 @@ impl Parser {
         let __end = self.isolate_block(end)?;
 
         loop {
-            let _end = self.to_first_minding_blocks(__end, TokenKind::Punctuation(Punctuation::Comma))?;
+            let _end =
+                self.to_first_minding_blocks(__end, TokenKind::Punctuation(Punctuation::Comma))?;
             if _end - self.pos <= 0 {
                 break;
             }
@@ -616,8 +617,10 @@ impl Parser {
         if id == "default".to_string() {
             id = "__default".to_string();
         }
-        let rid_tok = self.peek(0, end+1)?;
-        let replacement_id = if end > self.pos && self.peek(0, end)?.token == TokenKind::Punctuation(Punctuation::Colon) {
+        let rid_tok = self.peek(0, end + 1)?;
+        let replacement_id = if end > self.pos
+            && self.peek(0, end)?.token == TokenKind::Punctuation(Punctuation::Colon)
+        {
             self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Colon))?;
             if self.peek(0, end)?.token == TokenKind::Punctuation(Punctuation::LeftBracket) {
                 let unwrapped = self.parse_unwrap(end)?;
@@ -627,18 +630,19 @@ impl Parser {
                 TokenKind::ID(id) => id,
                 _ => unreachable!(),
             })
-        }else{None};
+        } else {
+            None
+        };
         if id == "default".to_string() {
             if replacement_id.is_none() {
-                return Err(ParserError::DefaultUnreassigned(rid_tok.line, rid_tok.col))
+                return Err(ParserError::DefaultUnreassigned(rid_tok.line, rid_tok.col));
             }
         }
         Ok(if let Some(new_id) = replacement_id {
             UnwrapTarget::ReassignID(id, new_id)
-        }else{
+        } else {
             UnwrapTarget::ID(id)
         })
-        
     }
     fn parse_export(&mut self, end: usize) -> Result<Statement> {
         self.eat_ex_kind(end, TokenKind::ID("export".to_string()))?;

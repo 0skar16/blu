@@ -11,7 +11,7 @@ pub enum Statement {
     Get(String),
     Child(Box<Statement>, Box<Statement>),
     Method(Box<Statement>, String),
-    Let(LetTarget, Option<Box<Statement>>),
+    Let(Vec<LetTarget>, Option<Box<Statement>>),
     Global(String, Option<Box<Statement>>),
     Assignment(Box<Statement>, Box<Statement>),
     Operation(Box<Statement>, Operation, Option<Box<Statement>>),
@@ -38,6 +38,7 @@ pub enum Statement {
         Box<Statement>,
         Vec<(Vec<Literal>, MatchOutput)>,
         Option<MatchOutput>,
+        bool,
     ),
     Nil,
 }
@@ -62,6 +63,9 @@ pub enum UnwrapTarget {
     ID(String),
     Unwrap(Vec<UnwrapTarget>, String),
     ReassignID(String, String),
+}
+pub enum ArrayUnwrapTarget {
+    ID(String),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub enum LoopOp {

@@ -44,22 +44,51 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
             buf.push('.');
             buf.push_str(&to_lua(*child, ind, false));
         }
-        Statement::Let(target, source) => match target {
-            LetTarget::ID(name) => {
-                buf.push_str("local ");
-                buf.push_str(&name);
-                if let Some(source) = source {
-                    buf.push_str(" = ");
-                    buf.push_str(&to_lua(*source, ind, false));
+        Statement::Let(targets, source) => {
+            let mut unwrap_buf = String::new();
+            let mut ids = vec![];
+            let mut x = 0;
+            let mut hasher = Hasher32::new();
+            source.hash(&mut hasher);
+            let hash = hasher.finish();
+            let targets_len = targets.len();
+            for target in targets {
+                match target {
+                    LetTarget::ID(id) => ids.push(id),
+                    LetTarget::Unwrap(targets) => {
+                        let id = format!("let_{hash:x}_{x:x}");
+                        ids.push(id.clone());
+                        if targets_len == 1 {
+                            buf.push_str(&resolve_unwrap(
+                                targets,
+                                *source.expect("Source should be some"),
+                                ind,
+                                do_ind,
+                            ));
+                            return buf;
+                        }
+                        unwrap_buf.push_str(&resolve_unwrap(
+                            targets,
+                            Statement::Get(id),
+                            ind,
+                            do_ind,
+                        ));
+                        
+                    },
                 }
-                buf.push('\n');
+                x+=1;
             }
-            LetTarget::Unwrap(targets) => buf.push_str(&resolve_unwrap(
-                targets,
-                *source.expect("Source of unwrap must be some"),
-                ind,
-                do_ind,
-            )),
+            buf.push_str("local ");
+            buf.push_str(&ids.join(", "));
+            if source.is_none() && unwrap_buf.len() > 0 {
+                panic!("Source of an unwrap must be some");
+            }
+            if let Some(source) = source {
+                buf.push_str(" = ");
+                buf.push_str(&to_lua(*source, ind, false));
+            }
+            buf.push('\n');
+            buf.push_str(&unwrap_buf);
         },
         Statement::Global(name, source) => {
             buf.push_str(&name);
@@ -309,7 +338,7 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
                 do_ind,
             ))
         }
-        Statement::Match(input, cases, default_case) => {
+        Statement::Match(input, cases, default_case, is_standalone) => {
             let mut hasher = Hasher32::new();
             input.hash(&mut hasher);
             let match_hash = hasher.finish();
@@ -328,7 +357,7 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
                 );
                 if case_possibilites.len() > 1 {
                     block.push(Statement::Let(
-                        LetTarget::ID(format!("match_{match_hash:x}_{i}")),
+                        vec![LetTarget::ID(format!("match_{match_hash:x}_{i}"))],
                         Some(Box::new(func)),
                     ));
                     lookup_table.extend(case_possibilites.into_iter().map(|lit| {
@@ -346,9 +375,7 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
                 Box::new(Statement::Paren(Box::new(Statement::Table(lookup_table)))),
                 Box::new(Statement::Get("input".to_string())),
             )]));
-            let match_statement = Statement::Let(
-                LetTarget::ID("_".to_string()),
-                Some(Box::new(Statement::Call(
+            let mut match_statement = Statement::Call(
                     Box::new(Statement::Paren(Box::new(Statement::Operation(
                         Box::new(Statement::Call(
                             Box::new(Statement::Paren(Box::new(Statement::Function(
@@ -381,8 +408,10 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
                     )))),
                     vec![],
                     true,
-                ))),
-            );
+                );
+            if is_standalone {
+                match_statement = Statement::Let(vec![LetTarget::ID("_".to_string())], Some(Box::new(match_statement)));
+            }
             buf.push_str(&to_lua(match_statement, ind, false));
         }
     }
@@ -390,17 +419,23 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
 }
 fn resolve_unwrap(unwrap: Vec<UnwrapTarget>, owner: Statement, ind: u8, do_ind: bool) -> String {
     let mut buf = String::new();
-    let mut hasher = Hasher32::new();
-    owner.hash(&mut hasher);
-    let unwrapped_object = format!("unwrapped_object_{:x}", hasher.finish());
-    buf.push_str(&to_lua(
-        Statement::Let(
-            LetTarget::ID(unwrapped_object.clone()),
-            Some(Box::new(owner)),
-        ),
-        ind,
-        do_ind,
-    ));
+    let unwrapped_object = match owner {
+        Statement::Get(id) => id,
+        _ => {
+            let mut hasher = Hasher32::new();
+            owner.hash(&mut hasher);
+            let id = format!("unwrapped_object_{:x}", hasher.finish());
+            buf.push_str(&to_lua(
+                Statement::Let(
+                    vec![LetTarget::ID(id.clone())],
+                    Some(Box::new(owner)),
+                ),
+                ind,
+                do_ind,
+            ));
+            id
+        }
+    };
     for target in unwrap {
         match target {
             UnwrapTarget::ID(id) => buf.push_str(&to_lua(

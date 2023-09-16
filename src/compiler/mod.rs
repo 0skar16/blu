@@ -73,10 +73,9 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
                             ind,
                             do_ind,
                         ));
-                        
-                    },
+                    }
                 }
-                x+=1;
+                x += 1;
             }
             buf.push_str("local ");
             buf.push_str(&ids.join(", "));
@@ -89,7 +88,7 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
             }
             buf.push('\n');
             buf.push_str(&unwrap_buf);
-        },
+        }
         Statement::Global(name, source) => {
             buf.push_str(&name);
             buf.push_str(" = ");
@@ -232,12 +231,8 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
                         buf.push_str(&format!(", {}", to_lua(*step, ind, false)));
                     }
                 }
-                BluIterator::Each(iterative, iterator) => {
-                    buf.push_str(&format!(
-                        "{} in pairs({})",
-                        iterative.join(", "),
-                        to_lua(*iterator, ind + 1, false)
-                    ));
+                BluIterator::Each(_, _) => {
+                    panic!("Lua doesn't have each iterators, use the simplifier before compiling")
                 }
                 BluIterator::Iterator(iterative, iterator) => {
                     buf.push_str(&format!(
@@ -338,81 +333,8 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
                 do_ind,
             ))
         }
-        Statement::Match(input, cases, default_case, is_standalone) => {
-            let mut hasher = Hasher32::new();
-            input.hash(&mut hasher);
-            let match_hash = hasher.finish();
-            let mut lookup_table = vec![];
-            let mut i = 0;
-            let mut block = vec![];
-            for (case_possibilites, output) in cases {
-                let func = Statement::Function(
-                    None,
-                    vec![],
-                    match output {
-                        MatchOutput::Block(block) => block,
-                        MatchOutput::Statement(st) => Block(vec![Statement::Return(vec![*st])]),
-                    },
-                    false,
-                );
-                if case_possibilites.len() > 1 {
-                    block.push(Statement::Let(
-                        vec![LetTarget::ID(format!("match_{match_hash:x}_{i}"))],
-                        Some(Box::new(func)),
-                    ));
-                    lookup_table.extend(case_possibilites.into_iter().map(|lit| {
-                        (
-                            TableIndex::Literal(lit),
-                            Statement::Get(format!("match_{match_hash:x}_{i}")),
-                        )
-                    }));
-                } else {
-                    lookup_table.push((TableIndex::Literal(case_possibilites[0].clone()), func));
-                }
-                i += 1;
-            }
-            block.push(Statement::Return(vec![Statement::Index(
-                Box::new(Statement::Paren(Box::new(Statement::Table(lookup_table)))),
-                Box::new(Statement::Get("input".to_string())),
-            )]));
-            let mut match_statement = Statement::Call(
-                    Box::new(Statement::Paren(Box::new(Statement::Operation(
-                        Box::new(Statement::Call(
-                            Box::new(Statement::Paren(Box::new(Statement::Function(
-                                None,
-                                vec!["input".to_string()],
-                                Block(block),
-                                false,
-                            )))),
-                            vec![*input],
-                            false,
-                        )),
-                        Operation::Or,
-                        Some(Box::new(
-                            default_case
-                                .map(|output| {
-                                    Statement::Function(
-                                        None,
-                                        vec![],
-                                        match output {
-                                            MatchOutput::Block(block) => block,
-                                            MatchOutput::Statement(st) => {
-                                                Block(vec![Statement::Return(vec![*st])])
-                                            }
-                                        },
-                                        false,
-                                    )
-                                })
-                                .unwrap_or(parse!("fn(){{}}")),
-                        )),
-                    )))),
-                    vec![],
-                    true,
-                );
-            if is_standalone {
-                match_statement = Statement::Let(vec![LetTarget::ID("_".to_string())], Some(Box::new(match_statement)));
-            }
-            buf.push_str(&to_lua(match_statement, ind, false));
+        Statement::Match(_, _, _, _) => {
+            panic!("Lua doesn't have a match statement, use the simplifier before compiling")
         }
     }
     buf
@@ -426,10 +348,7 @@ fn resolve_unwrap(unwrap: Vec<UnwrapTarget>, owner: Statement, ind: u8, do_ind: 
             owner.hash(&mut hasher);
             let id = format!("unwrapped_object_{:x}", hasher.finish());
             buf.push_str(&to_lua(
-                Statement::Let(
-                    vec![LetTarget::ID(id.clone())],
-                    Some(Box::new(owner)),
-                ),
+                Statement::Let(vec![LetTarget::ID(id.clone())], Some(Box::new(owner))),
                 ind,
                 do_ind,
             ));

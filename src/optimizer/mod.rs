@@ -1,4 +1,2 @@
 pub mod simplifier;
-pub struct Optimizer {
-
-}
+pub struct Optimizer {}

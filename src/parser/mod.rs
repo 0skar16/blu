@@ -79,12 +79,12 @@ impl Parser {
         if tok.token == TokenKind::Punctuation(Punctuation::Not) {
             self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Not))?;
             let st = self.parse_statement(end)?;
-            return Ok(Statement::Operation(Box::new(st), Operation::Not, None))
+            return Ok(Statement::Operation(Box::new(st), Operation::Not, None));
         }
         if tok.token == TokenKind::Punctuation(Punctuation::Hash) {
             self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Hash))?;
             let st = self.parse_statement(end)?;
-            return Ok(Statement::Operation(Box::new(st), Operation::Len, None))
+            return Ok(Statement::Operation(Box::new(st), Operation::Len, None));
         }
         if let Ok(op) = self.parse_operation(end) {
             buf.push((self.pos, op));
@@ -589,7 +589,10 @@ impl Parser {
     }
     fn parse_import_target(&mut self, end: usize) -> Result<ImportTarget> {
         if self.peek(0, end)?.token == TokenKind::Punctuation(Punctuation::LeftBracket) {
-            Ok(ImportTarget::Unwrap(self.parse_unwrap(end, &HashMap::from([("default".to_string(), "__default".to_string())]))?))
+            Ok(ImportTarget::Unwrap(self.parse_unwrap(
+                end,
+                &HashMap::from([("default".to_string(), "__default".to_string())]),
+            )?))
         } else {
             Ok(ImportTarget::Default(
                 match self.eat_ex(end, TokenKindDesc::ID)?.token {
@@ -599,7 +602,11 @@ impl Parser {
             ))
         }
     }
-    fn parse_unwrap(&mut self, end: usize, change: &HashMap<String, String>) -> Result<Vec<UnwrapTarget>> {
+    fn parse_unwrap(
+        &mut self,
+        end: usize,
+        change: &HashMap<String, String>,
+    ) -> Result<Vec<UnwrapTarget>> {
         let mut entries = vec![];
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftBracket))?;
         let __end = self.isolate_block(end)?;
@@ -619,7 +626,11 @@ impl Parser {
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightBracket))?;
         Ok(entries)
     }
-    fn parse_unwrap_target(&mut self, end: usize, change: &HashMap<String, String>) -> Result<UnwrapTarget> {
+    fn parse_unwrap_target(
+        &mut self,
+        end: usize,
+        change: &HashMap<String, String>,
+    ) -> Result<UnwrapTarget> {
         let mut id = match self.eat_ex(end, TokenKindDesc::ID)?.token {
             TokenKind::ID(id) => id,
             _ => unreachable!(),
@@ -633,7 +644,7 @@ impl Parser {
         {
             self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Colon))?;
             if self.peek(0, end)?.token == TokenKind::Punctuation(Punctuation::LeftBracket) {
-                let unwrapped = self.parse_unwrap(end,change)?;
+                let unwrapped = self.parse_unwrap(end, change)?;
                 return Ok(UnwrapTarget::Unwrap(unwrapped, id));
             }
             Some(match self.eat_ex(end, TokenKindDesc::ID)?.token {
@@ -856,7 +867,12 @@ impl Parser {
             self.eat_ex_kind(_end, TokenKind::Punctuation(Punctuation::Comma))?;
         }
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightBracket))?;
-        Ok(Statement::Match(Box::new(input), cases, default_case, is_standalone))
+        Ok(Statement::Match(
+            Box::new(input),
+            cases,
+            default_case,
+            is_standalone,
+        ))
     }
     fn parse_match_output(&mut self, end: usize) -> Result<MatchOutput> {
         if let Ok(block) = self.parse_block(end) {

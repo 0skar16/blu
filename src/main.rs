@@ -4,6 +4,7 @@
 use anyhow::{bail, Result};
 use blu::{
     lexer::{Lexer, LexerError},
+    optimizer::simplifier::{SimplificationTarget, Simplifier},
     parser::{Parser as BluParser, ParserError},
 };
 use clap::{Args, Parser, Subcommand};
@@ -55,6 +56,7 @@ fn main() -> Result<()> {
             };
             let token_stream = map_lexer_err!(Lexer::new(code.chars()).tokenize(), filename);
             let ast = map_parser_err!(BluParser::new(token_stream).parse(), filename);
+            let ast = Simplifier::simplify(SimplificationTarget::Lua, ast);
             let compiled = blu::compiler::compile(ast);
             if output == "-" {
                 print!("{}", compiled);

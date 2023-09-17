@@ -1,11 +1,14 @@
-use std::hash::Hash;
+use std::{
+    hash::Hash,
+    ops::{Deref, DerefMut},
+};
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct AST {
     pub statements: Vec<Statement>,
 }
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Statement {
     Call(Box<Statement>, Vec<Statement>, bool),
     Get(String),
@@ -43,51 +46,61 @@ pub enum Statement {
     Nil,
 }
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum MatchOutput {
     Block(Block),
     Statement(Box<Statement>),
 }
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum LetTarget {
     ID(String),
     Unwrap(Vec<UnwrapTarget>),
 }
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum ImportTarget {
     Default(String),
     Unwrap(Vec<UnwrapTarget>),
 }
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum UnwrapTarget {
     ID(String),
     Unwrap(Vec<UnwrapTarget>, String),
     ReassignID(String, String),
 }
-pub enum ArrayUnwrapTarget {
-    ID(String),
-}
-#[derive(Debug, Clone, Copy, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub enum LoopOp {
     Break,
     Continue,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub enum CommentType {
     SingleLine,
     MultiLine,
 }
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum TableIndex {
     None,
     Ident(String),
     Literal(Literal),
     Statement(Statement),
 }
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Block(pub Vec<Statement>);
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+impl DerefMut for Block {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl Deref for Block {
+    type Target = Vec<Statement>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum Operation {
     Add,
     Sub,
@@ -108,13 +121,15 @@ pub enum Operation {
     Len,
     Arrow,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Number(f64),
     String(String),
     Boolean(bool),
     Slice(Vec<Statement>),
 }
+
+impl Eq for Literal {}
 
 impl Hash for Literal {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -127,7 +142,7 @@ impl Hash for Literal {
     }
 }
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum BluIterator {
     Numerical(
         String,

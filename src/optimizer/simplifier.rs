@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    hash::{Hash, Hasher},
+    hash::{Hash, Hasher}, sync::Arc,
 };
 
 use fasthash::{murmur2::Hasher32, FastHasher};
@@ -114,7 +114,7 @@ impl LuaSimplifier {
             BluIterator::Each(a, b) => BluIterator::Iterator(
                 a,
                 Box::new(Statement::Call(
-                    Box::new(Statement::Get("pairs".to_string())),
+                    Box::new(Statement::Get("pairs".into())),
                     vec![Self::simplify_statement(*b)],
                     false,
                 )),
@@ -148,13 +148,13 @@ impl LuaSimplifier {
             );
             if case_possibilites.len() > 1 {
                 block.push(Statement::Let(
-                    vec![LetTarget::ID(format!("match_{match_hash:x}_{i}"))],
+                    vec![LetTarget::ID(format!("match_{match_hash:x}_{i}").into())],
                     Some(Box::new(func)),
                 ));
                 lookup_table.extend(case_possibilites.into_iter().map(|lit| {
                     (
                         TableIndex::Literal(lit),
-                        Statement::Get(format!("match_{match_hash:x}_{i}")),
+                        Statement::Get(format!("match_{match_hash:x}_{i}").into()),
                     )
                 }));
             } else {
@@ -164,14 +164,14 @@ impl LuaSimplifier {
         }
         block.push(Statement::Return(vec![Statement::Index(
             Box::new(Statement::Paren(Box::new(Statement::Table(lookup_table)))),
-            Box::new(Statement::Get("input".to_string())),
+            Box::new(Statement::Get("input".into())),
         )]));
         let mut match_statement = Statement::Call(
             Box::new(Statement::Paren(Box::new(Statement::Operation(
                 Box::new(Statement::Call(
                     Box::new(Statement::Paren(Box::new(Statement::Function(
                         None,
-                        vec!["input".to_string()],
+                        vec!["input".into()],
                         Block(block),
                         false,
                     )))),
@@ -202,29 +202,29 @@ impl LuaSimplifier {
         );
         if is_standalone {
             match_statement = Statement::Let(
-                vec![LetTarget::ID("_".to_string())],
+                vec![LetTarget::ID("_".into())],
                 Some(Box::new(match_statement)),
             );
         }
         match_statement
     }
-    fn simplify_import(target: ImportTarget, src: String) -> Statement {
+    fn simplify_import(target: ImportTarget, src: Arc<str>) -> Statement {
         match target {
             ImportTarget::Default(id) => Statement::Let(
                 vec![LetTarget::ID(id)],
                 Some(Box::new(Statement::Child(
                     Box::new(Statement::Call(
-                        Box::new(Statement::Get("require".to_string())),
+                        Box::new(Statement::Get("require".into())),
                         vec![Statement::Literal(Literal::String(src))],
                         false,
                     )),
-                    Box::new(Statement::Get("__default".to_string())),
+                    Box::new(Statement::Get("__default".into())),
                 ))),
             ),
             ImportTarget::Unwrap(unwrap) => Self::simplify_unwrap(
                 unwrap,
                 Statement::Call(
-                    Box::new(Statement::Get("require".to_string())),
+                    Box::new(Statement::Get("require".into())),
                     vec![Statement::Literal(Literal::String(src))],
                     false,
                 ),
@@ -244,7 +244,7 @@ impl LuaSimplifier {
         }
         let mut x = 0;
         let mut blk = Block(vec![]);
-        let mut names: HashMap<String, Statement> = HashMap::new();
+        let mut names: HashMap<Arc<str>, Statement> = HashMap::new();
         let mut let_outputs = vec![];
         let mut hasher = Hasher32::new();
         src.hash(&mut hasher);
@@ -256,7 +256,7 @@ impl LuaSimplifier {
                     names.insert(id.clone(), Statement::Get(id));
                 }
                 LetTarget::Unwrap(targets) => {
-                    let name = format!("unwrapped_{hash:x}_{x:x}");
+                    let name: Arc<str> = format!("unwrapped_{hash:x}_{x:x}").into();
                     let_outputs.push(name.clone());
                     for target in targets {
                         Self::resolve_unwrap_target(
@@ -300,7 +300,7 @@ impl LuaSimplifier {
     }
     fn simplify_unwrap(unwrap: Vec<UnwrapTarget>, src: Statement) -> Statement {
         let mut blk = Block(vec![]);
-        let mut names: HashMap<String, Statement> = HashMap::new();
+        let mut names: HashMap<Arc<str>, Statement> = HashMap::new();
         for target in unwrap {
             Self::resolve_unwrap_target(target, &mut names, &mut blk, src.clone());
         }
@@ -315,7 +315,7 @@ impl LuaSimplifier {
             Some(Box::new(Statement::Call(
                 Box::new(Statement::Paren(Box::new(Statement::Function(
                     None,
-                    vec!["src".to_string()],
+                    vec!["src".into()],
                     blk,
                     false,
                 )))),
@@ -326,7 +326,7 @@ impl LuaSimplifier {
     }
     fn resolve_unwrap_target(
         target: UnwrapTarget,
-        names: &mut HashMap<String, Statement>,
+        names: &mut HashMap<Arc<str>, Statement>,
         blk: &mut Block,
         src: Statement,
     ) {

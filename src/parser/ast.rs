@@ -1,6 +1,6 @@
 use std::{
     hash::Hash,
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut}, sync::Arc,
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -11,18 +11,18 @@ pub struct AST {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Statement {
     Call(Box<Statement>, Vec<Statement>, bool),
-    Get(String),
+    Get(Arc<str>),
     Child(Box<Statement>, Box<Statement>),
-    Method(Box<Statement>, String),
+    Method(Box<Statement>, Arc<str>),
     Let(Vec<LetTarget>, Option<Box<Statement>>),
-    Global(String, Option<Box<Statement>>),
+    Global(Arc<str>, Option<Box<Statement>>),
     Assignment(Box<Statement>, Box<Statement>),
     Operation(Box<Statement>, Operation, Option<Box<Statement>>),
-    Comment(CommentType, String),
+    Comment(CommentType, Arc<str>),
     Literal(Literal),
     Return(Vec<Statement>),
     Table(Vec<(TableIndex, Statement)>),
-    Function(Option<Box<Statement>>, Vec<String>, Block, bool),
+    Function(Option<Box<Statement>>, Vec<Arc<str>>, Block, bool),
     For(BluIterator, Block),
     While(Box<Statement>, Block),
     Loop(Box<Statement>, Block),
@@ -35,8 +35,8 @@ pub enum Statement {
     Paren(Box<Statement>),
     Index(Box<Statement>, Box<Statement>),
     LoopOperation(LoopOp),
-    Import(ImportTarget, String),
-    Export(Box<Statement>, String),
+    Import(ImportTarget, Arc<str>),
+    Export(Box<Statement>, Arc<str>),
     Match(
         Box<Statement>,
         Vec<(Vec<Literal>, MatchOutput)>,
@@ -53,19 +53,19 @@ pub enum MatchOutput {
 }
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum LetTarget {
-    ID(String),
+    ID(Arc<str>),
     Unwrap(Vec<UnwrapTarget>),
 }
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum ImportTarget {
-    Default(String),
+    Default(Arc<str>),
     Unwrap(Vec<UnwrapTarget>),
 }
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum UnwrapTarget {
-    ID(String),
-    Unwrap(Vec<UnwrapTarget>, String),
-    ReassignID(String, String),
+    ID(Arc<str>),
+    Unwrap(Vec<UnwrapTarget>, Arc<str>),
+    ReassignID(Arc<str>, Arc<str>),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub enum LoopOp {
@@ -80,7 +80,7 @@ pub enum CommentType {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum TableIndex {
     None,
-    Ident(String),
+    Ident(Arc<str>),
     Literal(Literal),
     Statement(Statement),
 }
@@ -124,7 +124,7 @@ pub enum Operation {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Number(f64),
-    String(String),
+    String(Arc<str>),
     Boolean(bool),
     Slice(Vec<Statement>),
 }
@@ -145,11 +145,11 @@ impl Hash for Literal {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum BluIterator {
     Numerical(
-        String,
+        Arc<str>,
         Box<Statement>,
         Box<Statement>,
         Option<Box<Statement>>,
     ),
-    Each(Vec<String>, Box<Statement>),
-    Iterator(Vec<String>, Box<Statement>),
+    Each(Vec<Arc<str>>, Box<Statement>),
+    Iterator(Vec<Arc<str>>, Box<Statement>),
 }

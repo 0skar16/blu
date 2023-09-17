@@ -280,8 +280,8 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
             panic!("Lua doesn't have an import statement, use the simplifier before compiling")
         }
         Statement::Export(source, mut target) => {
-            if target == "default".to_string() {
-                target = "__default".to_string();
+            if target == "default".into() {
+                target = "__default".into();
             }
             buf.push_str(&to_lua(
                 Statement::Assignment(Box::new(parse!("__export.{target}")), source),

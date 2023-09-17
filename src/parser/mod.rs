@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::lexer::{Number, Punctuation, Token, TokenKind, TokenKindDesc};
 
@@ -52,7 +52,7 @@ impl Parser {
             self.pos = pos;
         }
         Ok(match &tok.token {
-            TokenKind::ID(id) => match id.as_str() {
+            TokenKind::ID(id) => match &(**id) {
                 "fn" => self.parse_function(end, true)?,
                 "let" => self.parse_let(end)?,
                 "if" => self.parse_if(end)?,
@@ -120,7 +120,7 @@ impl Parser {
             return Ok(stmt);
         }
         Ok(match &tok.token {
-            TokenKind::ID(id) => match id.as_str() {
+            TokenKind::ID(id) => match &(**id) {
                 "fn" => self.parse_function(end, false)?,
                 "nil" | "nul" | "null" | "none" => Statement::Nil,
                 "match" => self.parse_match(end, false)?,
@@ -165,7 +165,7 @@ impl Parser {
         let op = self.eat_ex(end, TokenKindDesc::ID)?;
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
         if let TokenKind::ID(id) = op.token.clone() {
-            match id.as_str() {
+            match &(*id) {
                 "break" => return Ok(Statement::LoopOperation(LoopOp::Break)),
                 "continue" => return Ok(Statement::LoopOperation(LoopOp::Continue)),
                 _ => return Err(ParserError::UnexpectedToken(op)),
@@ -175,9 +175,9 @@ impl Parser {
         unreachable!()
     }
     fn parse_loop(&mut self, end: usize) -> Result<Statement> {
-        self.eat_ex_kind(end, TokenKind::ID("loop".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::ID("loop".into()))?;
         let block = self.parse_block(end)?;
-        self.eat_ex_kind(end, TokenKind::ID("until".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::ID("until".into()))?;
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
         let _end = self.isolate_block(end)?;
         let stmt = self.parse_statement(_end)?;
@@ -185,7 +185,7 @@ impl Parser {
         Ok(Statement::Loop(Box::new(stmt), block))
     }
     fn parse_while(&mut self, end: usize) -> Result<Statement> {
-        self.eat_ex_kind(end, TokenKind::ID("while".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::ID("while".into()))?;
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
         let _end = self.isolate_block(end)?;
         let stmt = self.parse_statement(_end)?;
@@ -207,7 +207,7 @@ impl Parser {
                 self.eat_ex(end, TokenKindDesc::String)?;
                 Statement::Literal(Literal::String(s.clone()))
             }
-            TokenKind::ID(id) => match id.as_str() {
+            TokenKind::ID(id) => match &(*id) {
                 "true" => {
                     self.eat_ex(end, TokenKindDesc::ID)?;
                     Statement::Literal(Literal::Boolean(true))
@@ -232,7 +232,7 @@ impl Parser {
         Ok(Statement::Index(Box::new(indexed), Box::new(index)))
     }
     fn parse_global(&mut self, end: usize) -> Result<Statement> {
-        self.eat_ex_kind(end, TokenKind::ID("global".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::ID("global".into()))?;
         let name = self.eat_ex(end, TokenKindDesc::ID)?;
         let name = match name.token {
             TokenKind::ID(s) => s,
@@ -472,7 +472,7 @@ impl Parser {
         Ok(Statement::Literal(Literal::Slice(elements)))
     }
     fn parse_function(&mut self, end: usize, standalone: bool) -> Result<Statement> {
-        self.eat_ex_kind(end, TokenKind::ID("fn".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::ID("fn".into()))?;
         let name;
         let _end = self.to_first(end, TokenKind::Punctuation(Punctuation::LeftBracket))?;
         let _end = self.to_last(_end, TokenKind::Punctuation(Punctuation::LeftParen))?;
@@ -518,7 +518,7 @@ impl Parser {
             } else if let Ok(_) = self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot)) {
                 self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot))?;
                 self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot))?;
-                args.push("...".to_string());
+                args.push("...".into());
             }
             if self
                 .eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Comma))
@@ -541,7 +541,7 @@ impl Parser {
         unreachable!()
     }
     fn parse_let(&mut self, end: usize) -> Result<Statement> {
-        self.eat_ex_kind(end, TokenKind::ID("let".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::ID("let".into()))?;
         let mut targets = vec![];
         loop {
             targets.push(self.parse_let_target(end)?);
@@ -577,9 +577,9 @@ impl Parser {
         }
     }
     fn parse_import(&mut self, end: usize) -> Result<Statement> {
-        self.eat_ex_kind(end, TokenKind::ID("import".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::ID("import".into()))?;
         let target = self.parse_import_target(end)?;
-        self.eat_ex_kind(end, TokenKind::ID("from".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::ID("from".into()))?;
         let source = match self.eat_ex(end, TokenKindDesc::String)?.token {
             TokenKind::String(s) => s,
             _ => unreachable!(),
@@ -591,7 +591,7 @@ impl Parser {
         if self.peek(0, end)?.token == TokenKind::Punctuation(Punctuation::LeftBracket) {
             Ok(ImportTarget::Unwrap(self.parse_unwrap(
                 end,
-                &HashMap::from([("default".to_string(), "__default".to_string())]),
+                &HashMap::from([("default".into(), "__default".into())]),
             )?))
         } else {
             Ok(ImportTarget::Default(
@@ -605,7 +605,7 @@ impl Parser {
     fn parse_unwrap(
         &mut self,
         end: usize,
-        change: &HashMap<String, String>,
+        change: &HashMap<Arc<str>, Arc<str>>,
     ) -> Result<Vec<UnwrapTarget>> {
         let mut entries = vec![];
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftBracket))?;
@@ -629,7 +629,7 @@ impl Parser {
     fn parse_unwrap_target(
         &mut self,
         end: usize,
-        change: &HashMap<String, String>,
+        change: &HashMap<Arc<str>, Arc<str>>,
     ) -> Result<UnwrapTarget> {
         let mut id = match self.eat_ex(end, TokenKindDesc::ID)?.token {
             TokenKind::ID(id) => id,
@@ -654,7 +654,7 @@ impl Parser {
         } else {
             None
         };
-        if id == "default".to_string() {
+        if id == "default".into() {
             if replacement_id.is_none() {
                 return Err(ParserError::DefaultUnreassigned(rid_tok.line, rid_tok.col));
             }
@@ -666,10 +666,10 @@ impl Parser {
         })
     }
     fn parse_export(&mut self, end: usize) -> Result<Statement> {
-        self.eat_ex_kind(end, TokenKind::ID("export".to_string()))?;
-        let _end = self.to_first_minding_blocks(end, TokenKind::ID("as".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::ID("export".into()))?;
+        let _end = self.to_first_minding_blocks(end, TokenKind::ID("as".into()))?;
         let source = self.parse_statement(_end)?;
-        self.eat_ex_kind(end, TokenKind::ID("as".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::ID("as".into()))?;
         let target = match self.eat_ex(end, TokenKindDesc::ID)?.token {
             TokenKind::ID(id) => id,
             _ => unreachable!(),
@@ -678,7 +678,7 @@ impl Parser {
         Ok(Statement::Export(Box::new(source), target))
     }
     fn parse_if(&mut self, end: usize) -> Result<Statement> {
-        self.eat_ex_kind(end, TokenKind::ID("if".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::ID("if".into()))?;
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
         let _end = self.isolate_block(end)?;
         let stmt = self.parse_statement(_end)?;
@@ -687,10 +687,10 @@ impl Parser {
         let mut elseifs = vec![];
         let mut _else = None;
         loop {
-            if let Ok(t) = self.peek(0, end) && t.token == TokenKind::ID("else".to_string()) {
-                self.eat_ex_kind(end, TokenKind::ID("else".to_string()))?;
-                if self.peek(0, end)?.token == TokenKind::ID("if".to_string()) {
-                    self.eat_ex_kind(end, TokenKind::ID("if".to_string()))?;
+            if let Ok(t) = self.peek(0, end) && t.token == TokenKind::ID("else".into()) {
+                self.eat_ex_kind(end, TokenKind::ID("else".into()))?;
+                if self.peek(0, end)?.token == TokenKind::ID("if".into()) {
+                    self.eat_ex_kind(end, TokenKind::ID("if".into()))?;
                     self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
                     let _end = self.isolate_block(end)?;
                     let stmt = self.parse_statement(_end)?;
@@ -719,7 +719,7 @@ impl Parser {
         Ok(Statement::Assignment(Box::new(subject), Box::new(value)))
     }
     fn parse_return(&mut self, end: usize) -> Result<Statement> {
-        self.eat_ex_kind(end, TokenKind::ID("return".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::ID("return".into()))?;
         let __end =
             self.to_first_minding_blocks(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
         let mut elements = vec![];
@@ -738,7 +738,7 @@ impl Parser {
         Ok(Statement::Return(elements))
     }
     fn parse_for(&mut self, end: usize) -> Result<Statement> {
-        self.eat_ex_kind(end, TokenKind::ID("for".to_string()))?;
+        self.eat_ex_kind(end, TokenKind::ID("for".into()))?;
         let _end = self.to_first(end, TokenKind::Punctuation(Punctuation::LeftBracket))?;
         let mut indexors = vec![];
         loop {
@@ -755,8 +755,8 @@ impl Parser {
             return Err(ParserError::UnexpectedEos);
         }
         let tk = self.peek(0, end)?.token;
-        let iterator = if tk == TokenKind::ID("in".to_string()) {
-            self.eat_ex_kind(end, TokenKind::ID("in".to_string()))?;
+        let iterator = if tk == TokenKind::ID("in".into()) {
+            self.eat_ex_kind(end, TokenKind::ID("in".into()))?;
             let mut __end = self.pos;
             let mut o = 0;
             let mut i = 0;
@@ -805,8 +805,8 @@ impl Parser {
             } else {
                 BluIterator::Each(indexors, Box::new(start))
             }
-        } else if tk == TokenKind::ID("iter".to_string()) {
-            self.eat_ex_kind(end, TokenKind::ID("iter".to_string()))?;
+        } else if tk == TokenKind::ID("iter".into()) {
+            self.eat_ex_kind(end, TokenKind::ID("iter".into()))?;
             let iter = self.parse_statement(_end)?;
             BluIterator::Iterator(indexors, Box::new(iter))
         } else {
@@ -819,7 +819,7 @@ impl Parser {
         Ok(Statement::For(iterator, block))
     }
     fn parse_match(&mut self, end: usize, is_standalone: bool) -> Result<Statement> {
-        let match_tok = self.eat_ex_kind(end, TokenKind::ID("match".to_string()))?;
+        let match_tok = self.eat_ex_kind(end, TokenKind::ID("match".into()))?;
         let input = self.parse_statement(end)?;
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftBracket))?;
         let _end = self.isolate_block(end)?;
@@ -830,8 +830,8 @@ impl Parser {
         while _end - self.pos > 0 {
             let __end =
                 self.to_first_minding_blocks(_end, TokenKind::Punctuation(Punctuation::Comma))?;
-            if self.peek(0, __end)?.token == TokenKind::ID("_".to_string()) {
-                self.eat_ex_kind(__end, TokenKind::ID("_".to_string()))?;
+            if self.peek(0, __end)?.token == TokenKind::ID("_".into()) {
+                self.eat_ex_kind(__end, TokenKind::ID("_".into()))?;
                 self.eat_ex_kind(__end, TokenKind::Punctuation(Punctuation::Equals))?;
                 self.eat_ex_kind(__end, TokenKind::Punctuation(Punctuation::RightArrow))?;
                 let output = self.parse_match_output(__end)?;

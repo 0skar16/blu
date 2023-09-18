@@ -1,6 +1,8 @@
+use std::rc::Rc;
+
 use crate::{
     parse,
-    parser::ast::{BluIterator, LetTarget, LoopOp, Operation, Statement, TableIndex, AST},
+    parser::ast::{BluIterator, LetTarget, LoopOp, Operation, Statement, TableIndex, AST, Type},
 };
 
 pub fn compile(ast: AST) -> String {
@@ -37,7 +39,7 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
             buf.push('.');
             buf.push_str(&to_lua(*child, ind, false));
         }
-        Statement::Let(targets, source) => {
+        Statement::Let(targets, _, source) => {
             let mut ids = vec![];
             for target in targets {
                 match target {
@@ -55,8 +57,8 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
             }
             buf.push('\n');
         }
-        Statement::Global(name, source) => {
-            buf.push_str(&name);
+        Statement::Global(names, _, source) => {
+            buf.push_str(&names.join(", "));
             buf.push_str(" = ");
             if let Some(source) = source {
                 buf.push_str(&to_lua(*source, ind, false));
@@ -170,7 +172,8 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
                 buf.push_str(&to_lua(*name, ind + 1, false));
             }
             buf.push('(');
-            buf.push_str(&args.join(", "));
+            let (names, _): (Vec<Rc<str>>, Vec<Type>) = args.into_iter().unzip();
+            buf.push_str(&names.join(", "));
             buf.push_str(")\n");
             for stmt in block.0 {
                 buf.push_str(&to_lua(stmt, ind + 1, true));

@@ -1,5 +1,5 @@
 // Function creating test
-fn test_function(arg) {
+fn test_function(arg: str) {
     // Literals and locals
     let a = -1;
     let b = true;
@@ -26,9 +26,9 @@ fn test_function(arg) {
     Multi-line comment test!
 */
 // Variable length arguments test
-fn variable_len_arg(arg1, ...) {
+fn variable_len_arg(arg1: str, ...: [str]) {
     print(arg1);
-    for _,arg in arg {
+    for _,arg in args {
         print(arg);
     }
 }
@@ -48,7 +48,7 @@ let b = {
 };
 let {a, d} = b;
 // Calling an index of a child inside a param
-let c = b.d[1]();
+let c: str = b.d[1]();
 // Testing the contents
 print(c);
 // GLOBALS!

@@ -96,7 +96,8 @@ impl LuaSimplifier {
                     })
                     .collect(),
             ),
-            Statement::Let(targets, src) => Self::simplify_let(targets, src),
+            Statement::Let(targets, types, src) => Self::simplify_let(targets, types, src),
+            Statement::Global(names, types, src) => Statement::Global(names, types, src.map(|src| Box::new(Self::simplify_statement(*src)))),
             Statement::Import(target, src) => Self::simplify_import(target, src),
             st => st,
         }
@@ -147,6 +148,7 @@ impl LuaSimplifier {
             if case_possibilites.len() > 1 {
                 block.push(Statement::Let(
                     vec![LetTarget::ID(format!("match_{match_hash:x}_{i}").into())],
+                    vec![Type::Any],
                     Some(Box::new(func)),
                 ));
                 lookup_table.extend(case_possibilites.into_iter().map(|lit| {
@@ -169,7 +171,7 @@ impl LuaSimplifier {
                 Box::new(Statement::Call(
                     Box::new(Statement::Paren(Box::new(Statement::Function(
                         None,
-                        vec!["input".into()],
+                        vec![("input".into(), Type::Any)],
                         Block(block),
                         false,
                     )))),
@@ -201,6 +203,7 @@ impl LuaSimplifier {
         if is_standalone {
             match_statement = Statement::Let(
                 vec![LetTarget::ID("_".into())],
+                vec![Type::Any],
                 Some(Box::new(match_statement)),
             );
         }
@@ -210,6 +213,7 @@ impl LuaSimplifier {
         match target {
             ImportTarget::Default(id) => Statement::Let(
                 vec![LetTarget::ID(id)],
+                vec![Type::Any],
                 Some(Box::new(Statement::Child(
                     Box::new(Statement::Call(
                         Box::new(Statement::Get("require".into())),
@@ -229,7 +233,7 @@ impl LuaSimplifier {
             ),
         }
     }
-    fn simplify_let(targets: Vec<LetTarget>, src: Option<Box<Statement>>) -> Statement {
+    fn simplify_let(targets: Vec<LetTarget>, types: Vec<Type>, src: Option<Box<Statement>>) -> Statement {
         if targets
             .iter()
             .find(|t| match t {
@@ -238,7 +242,7 @@ impl LuaSimplifier {
             })
             .is_none()
         {
-            return Statement::Let(targets, src);
+            return Statement::Let(targets, types, src);
         }
         let mut x = 0;
         let mut blk = Block(vec![]);
@@ -268,11 +272,13 @@ impl LuaSimplifier {
                 }
             }
         }
+        let len = let_outputs.len();
         let mut _blk = Block(vec![Statement::Let(
             let_outputs
                 .into_iter()
                 .map(|name| LetTarget::ID(name))
                 .collect(),
+            vec![0u8;len].into_iter().map(|_| Type::Any).collect(),
             src,
         )]);
         _blk.extend(blk.0);
@@ -284,6 +290,7 @@ impl LuaSimplifier {
                 .keys()
                 .map(|name| LetTarget::ID(name.clone()))
                 .collect(),
+            vec![0u8;names.len()].into_iter().map(|_| Type::Any).collect(),
             Some(Box::new(Statement::Call(
                 Box::new(Statement::Paren(Box::new(Statement::Function(
                     None,
@@ -310,10 +317,11 @@ impl LuaSimplifier {
                 .keys()
                 .map(|name| LetTarget::ID(name.clone()))
                 .collect(),
+            vec![0u8;names.len()].into_iter().map(|_| Type::Any).collect(),
             Some(Box::new(Statement::Call(
                 Box::new(Statement::Paren(Box::new(Statement::Function(
                     None,
-                    vec!["src".into()],
+                    vec![("src".into(), Type::Any)],
                     blk,
                     false,
                 )))),

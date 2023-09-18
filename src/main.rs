@@ -254,8 +254,8 @@ fn build_dir(target: Target, dir: PathBuf, out: PathBuf) -> Result<()> {
             let err_filename = path.to_string_lossy().to_string().replace(&root, "");
             let token_stream = map_lexer_err!(Lexer::new(src.chars()).tokenize(), err_filename);
             let ast = map_parser_err!(BluParser::new(token_stream).parse(), err_filename);
-            let ast = Simplifier::simplify(Target::Lua, ast);
-            let compiled = blu::compiler::Compiler::compile(Target::Lua, ast);
+            let ast = Simplifier::simplify(target, ast);
+            let compiled = blu::compiler::Compiler::compile(target, ast);
             std::fs::write(new_path, compiled)?;
         }
     }

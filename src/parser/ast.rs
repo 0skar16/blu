@@ -15,14 +15,14 @@ pub enum Statement {
     Get(Rc<str>),
     Child(Box<Statement>, Box<Statement>),
     Method(Box<Statement>, Rc<str>),
-    Let(Vec<LetTarget>, Option<Box<Statement>>),
-    Global(Rc<str>, Option<Box<Statement>>),
+    Let(Vec<LetTarget>, Vec<Type>, Option<Box<Statement>>),
+    Global(Vec<Rc<str>>, Vec<Type>, Option<Box<Statement>>),
     Assignment(Box<Statement>, Box<Statement>),
     Operation(Box<Statement>, Operation, Option<Box<Statement>>),
     Literal(Literal),
     Return(Vec<Statement>),
     Table(Vec<(TableIndex, Statement)>),
-    Function(Option<Box<Statement>>, Vec<Rc<str>>, Block, bool),
+    Function(Option<Box<Statement>>, Vec<(Rc<str>, Type)>, Block, bool),
     For(BluIterator, Block),
     While(Box<Statement>, Block),
     Loop(Box<Statement>, Block),
@@ -44,6 +44,24 @@ pub enum Statement {
         bool,
     ),
     Nil,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum Type {
+    Any,
+    Str,
+    Array(Rc<Type>),
+    F32,
+    F64,
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
+    Custom(Rc<str>),
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

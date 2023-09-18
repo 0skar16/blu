@@ -105,7 +105,6 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
                 buf.push_str(&to_lua(*operand, ind, false))
             }
         }
-        Statement::Comment(_, _) => {}
         Statement::Literal(lit) => buf.push_str(&match lit {
             crate::parser::ast::Literal::Number(number) => number.to_string(),
             crate::parser::ast::Literal::String(s) => format!("\"{}\"", s.replace("\"", "\\\"")),

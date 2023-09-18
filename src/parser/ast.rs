@@ -19,7 +19,6 @@ pub enum Statement {
     Global(Rc<str>, Option<Box<Statement>>),
     Assignment(Box<Statement>, Box<Statement>),
     Operation(Box<Statement>, Operation, Option<Box<Statement>>),
-    Comment(CommentType, Rc<str>),
     Literal(Literal),
     Return(Vec<Statement>),
     Table(Vec<(TableIndex, Statement)>),

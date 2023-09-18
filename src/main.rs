@@ -4,8 +4,9 @@
 use anyhow::{bail, Result};
 use blu::{
     lexer::{Lexer, LexerError},
-    optimizer::simplifier::{SimplificationTarget, Simplifier},
+    optimizer::simplifier::Simplifier,
     parser::{Parser as BluParser, ParserError},
+    Target,
 };
 use clap::{Args, Parser, Subcommand};
 use colored::Colorize;
@@ -25,8 +26,14 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    New { name: PathBuf },
-    Build {},
+    New {
+        name: PathBuf,
+    },
+    Build {
+        #[arg(long, short)]
+        #[clap(default_value = "lua")]
+        target: Target,
+    },
     Init {},
     Compile(CompileArgs),
 }
@@ -36,6 +43,9 @@ struct CompileArgs {
     input: PathBuf,
     #[arg(long, short)]
     output: String,
+    #[arg(long, short)]
+    #[clap(default_value = "lua")]
+    target: Target,
 }
 fn main() -> Result<()> {
     let blu_home = if let Some(home) = home::home_dir() {
@@ -47,7 +57,11 @@ fn main() -> Result<()> {
     };
     let cli = Cli::try_parse()?;
     match cli.command {
-        Commands::Compile(CompileArgs { input, output }) => {
+        Commands::Compile(CompileArgs {
+            input,
+            output,
+            target,
+        }) => {
             let code = std::fs::read_to_string(&input)?;
             let filename = if let Some(str) = input.file_name() {
                 str.to_string_lossy().to_string()
@@ -56,8 +70,8 @@ fn main() -> Result<()> {
             };
             let token_stream = map_lexer_err!(Lexer::new(code.chars()).tokenize(), filename);
             let ast = map_parser_err!(BluParser::new(token_stream).parse(), filename);
-            let ast = Simplifier::simplify(SimplificationTarget::Lua, ast);
-            let compiled = blu::compiler::compile(ast);
+            let ast = Simplifier::simplify(target, ast);
+            let compiled = blu::compiler::Compiler::compile(target, ast);
             if output == "-" {
                 print!("{}", compiled);
             } else {
@@ -82,7 +96,7 @@ fn main() -> Result<()> {
             )?;
             std::fs::write(name.join("src/main.blu"), "print(\"Hello world!\");")?;
         }
-        Commands::Build {} => {
+        Commands::Build { target } => {
             let dir = current_dir()?;
             if !std::fs::try_exists(dir.join("blu.yml"))? {
                 bail!("Blu manifest isn't in the current directory!");
@@ -107,7 +121,7 @@ fn main() -> Result<()> {
                 }
             }
 
-            build_dir(dir.join("src"), dir.join("target"))?;
+            build_dir(target, dir.join("src"), dir.join("target"))?;
             if manifest.include.len() > 0 {
                 set_current_dir(&dir)?;
                 std::fs::create_dir_all(dir.join("target").join("modules"))?;
@@ -144,6 +158,7 @@ fn main() -> Result<()> {
                         }
                         set_current_dir(&dir)?;
                         build_dir(
+                            target,
                             path.join("src"),
                             dir.join("target").join("modules").join(&mod_manifest.name),
                         )?;
@@ -199,6 +214,7 @@ fn main() -> Result<()> {
     }
     Ok(())
 }
+
 #[derive(Debug, Serialize, Deserialize)]
 struct BluManifest {
     name: String,
@@ -218,7 +234,7 @@ pub struct Inclusion {
     name: String,
     path: Option<PathBuf>,
 }
-fn build_dir(dir: PathBuf, out: PathBuf) -> Result<()> {
+fn build_dir(target: Target, dir: PathBuf, out: PathBuf) -> Result<()> {
     let root = dir.to_string_lossy().to_string();
     let new_root = out.to_string_lossy().to_string();
     for src in WalkDir::new(dir).into_iter() {
@@ -238,8 +254,8 @@ fn build_dir(dir: PathBuf, out: PathBuf) -> Result<()> {
             let err_filename = path.to_string_lossy().to_string().replace(&root, "");
             let token_stream = map_lexer_err!(Lexer::new(src.chars()).tokenize(), err_filename);
             let ast = map_parser_err!(BluParser::new(token_stream).parse(), err_filename);
-            let ast = Simplifier::simplify(SimplificationTarget::Lua, ast);
-            let compiled = blu::compiler::compile(ast);
+            let ast = Simplifier::simplify(Target::Lua, ast);
+            let compiled = blu::compiler::Compiler::compile(Target::Lua, ast);
             std::fs::write(new_path, compiled)?;
         }
     }

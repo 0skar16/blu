@@ -1,23 +1,21 @@
 use std::{
     collections::HashMap,
-    hash::{Hash, Hasher}, rc::Rc,
+    hash::{Hash, Hasher},
+    rc::Rc,
 };
 
 use fasthash::{murmur2::Hasher32, FastHasher};
 
-use crate::{parse, parser::ast::*};
+use crate::{parse, parser::ast::*, Target};
 
 pub struct Simplifier;
 
 impl Simplifier {
-    pub fn simplify(target: SimplificationTarget, ast: AST) -> AST {
+    pub fn simplify(target: Target, ast: AST) -> AST {
         match target {
-            SimplificationTarget::Lua => LuaSimplifier::simplify_ast(ast),
+            Target::Lua => LuaSimplifier::simplify_ast(ast),
         }
     }
-}
-pub enum SimplificationTarget {
-    Lua,
 }
 
 pub struct LuaSimplifier;

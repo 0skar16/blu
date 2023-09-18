@@ -2,7 +2,9 @@ extern crate test;
 
 #[cfg(test)]
 mod tests {
-    use crate::{compiler::compile, optimizer::simplifier::{SimplificationTarget, Simplifier}, lexer::Lexer, parser::Parser};
+    use crate::{
+        compiler::Compiler, lexer::Lexer, optimizer::simplifier::Simplifier, parser::Parser, Target,
+    };
 
     use super::test::Bencher;
 
@@ -12,8 +14,8 @@ mod tests {
         b.iter(move || {
             let token_stream = Lexer::new(code.chars()).tokenize().unwrap();
             let ast = Parser::new(token_stream).parse().unwrap();
-            let ast = Simplifier::simplify(SimplificationTarget::Lua, ast);
-            let _ = compile(ast);
+            let ast = Simplifier::simplify(Target::Lua, ast);
+            let _ = Compiler::compile(Target::Lua, ast);
         });
     }
 }

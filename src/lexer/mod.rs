@@ -1,7 +1,8 @@
 use crate::{throw_unexpected_char, try_next_char};
 use std::{
     fmt::{Debug, Write},
-    str::Chars, rc::Rc,
+    rc::Rc,
+    str::Chars,
 };
 #[derive(Debug, Clone, PartialEq)]
 pub enum LexerError {
@@ -52,11 +53,7 @@ impl Lexer {
                     self.take_until("*/");
                     return self.next_token();
                 }
-                _ => Token::new(
-                    self,
-                    TokenKind::Punctuation(Punctuation::Div),
-                    "/".into(),
-                ),
+                _ => Token::new(self, TokenKind::Punctuation(Punctuation::Div), "/".into()),
             },
             '&' => {
                 match self.peek_char(0) {
@@ -106,17 +103,21 @@ impl Lexer {
             }
             '"' => {
                 let s = self.take_until("\"");
-                Token::new(self, TokenKind::String(s.clone()), format!("\"{}\"", s).into())
+                Token::new(
+                    self,
+                    TokenKind::String(s.clone()),
+                    format!("\"{}\"", s).into(),
+                )
             }
             '`' => {
                 let s = self.take_until("`");
-                Token::new(self, TokenKind::String(s.clone()), format!("`{}`", s).into())
+                Token::new(
+                    self,
+                    TokenKind::String(s.clone()),
+                    format!("`{}`", s).into(),
+                )
             }
-            '-' => Token::new(
-                self,
-                TokenKind::Punctuation(Punctuation::Sub),
-                "-".into(),
-            ),
+            '-' => Token::new(self, TokenKind::Punctuation(Punctuation::Sub), "-".into()),
             '{' => Token::new(
                 self,
                 TokenKind::Punctuation(Punctuation::LeftBracket),
@@ -147,51 +148,19 @@ impl Lexer {
                 TokenKind::Punctuation(Punctuation::RightSBracket),
                 "]".into(),
             ),
-            '.' => Token::new(
-                self,
-                TokenKind::Punctuation(Punctuation::Dot),
-                ".".into(),
-            ),
-            ':' => Token::new(
-                self,
-                TokenKind::Punctuation(Punctuation::Colon),
-                ":".into(),
-            ),
+            '.' => Token::new(self, TokenKind::Punctuation(Punctuation::Dot), ".".into()),
+            ':' => Token::new(self, TokenKind::Punctuation(Punctuation::Colon), ":".into()),
             ';' => Token::new(
                 self,
                 TokenKind::Punctuation(Punctuation::Semicolon),
                 ";".into(),
             ),
-            '%' => Token::new(
-                self,
-                TokenKind::Punctuation(Punctuation::Mod),
-                "%".into(),
-            ),
-            '*' => Token::new(
-                self,
-                TokenKind::Punctuation(Punctuation::Mul),
-                "*".into(),
-            ),
-            ',' => Token::new(
-                self,
-                TokenKind::Punctuation(Punctuation::Comma),
-                ",".into(),
-            ),
-            '+' => Token::new(
-                self,
-                TokenKind::Punctuation(Punctuation::Plus),
-                "+".into(),
-            ),
-            '^' => Token::new(
-                self,
-                TokenKind::Punctuation(Punctuation::Exp),
-                "^".into(),
-            ),
-            '!' => Token::new(
-                self,
-                TokenKind::Punctuation(Punctuation::Not),
-                "!".into(),
-            ),
+            '%' => Token::new(self, TokenKind::Punctuation(Punctuation::Mod), "%".into()),
+            '*' => Token::new(self, TokenKind::Punctuation(Punctuation::Mul), "*".into()),
+            ',' => Token::new(self, TokenKind::Punctuation(Punctuation::Comma), ",".into()),
+            '+' => Token::new(self, TokenKind::Punctuation(Punctuation::Plus), "+".into()),
+            '^' => Token::new(self, TokenKind::Punctuation(Punctuation::Exp), "^".into()),
+            '!' => Token::new(self, TokenKind::Punctuation(Punctuation::Not), "!".into()),
             '<' => Token::new(
                 self,
                 TokenKind::Punctuation(Punctuation::LeftArrow),
@@ -207,11 +176,7 @@ impl Lexer {
                 TokenKind::Punctuation(Punctuation::Equals),
                 "=".into(),
             ),
-            '#' => Token::new(
-                self,
-                TokenKind::Punctuation(Punctuation::Hash),
-                "#".into(),
-            ),
+            '#' => Token::new(self, TokenKind::Punctuation(Punctuation::Hash), "#".into()),
             c => {
                 if c == '0' && let Some(char) = self.peek_char(0) && (char == 'x' || char == 'X') {
                     let _ = self.next_char();

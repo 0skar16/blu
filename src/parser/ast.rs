@@ -1,6 +1,7 @@
 use std::{
     hash::Hash,
-    ops::{Deref, DerefMut}, rc::Rc,
+    ops::{Deref, DerefMut},
+    rc::Rc,
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

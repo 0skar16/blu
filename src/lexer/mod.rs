@@ -1,7 +1,7 @@
 use crate::{throw_unexpected_char, try_next_char};
 use std::{
     fmt::{Debug, Write},
-    str::Chars, sync::Arc,
+    str::Chars, rc::Rc,
 };
 #[derive(Debug, Clone, PartialEq)]
 pub enum LexerError {
@@ -271,7 +271,7 @@ impl Lexer {
                 if c.is_alphanumeric() || c == '_' {
                     let mut id: String = c.into();
                     id.push_str(&self.take_while(|c| c.is_alphanumeric() || c == '_'));
-                    let id: Arc<str> = id.into();
+                    let id: Rc<str> = id.into();
                     return (Ok(Token::new(self, TokenKind::ID(id.clone()), id)), false);
                 }
                 throw_unexpected_char!(c, self)
@@ -279,7 +279,7 @@ impl Lexer {
         };
         (Ok(tok), false)
     }
-    fn take_until(&mut self, pattern: &str) -> Arc<str> {
+    fn take_until(&mut self, pattern: &str) -> Rc<str> {
         let pattern: Vec<char> = pattern.chars().collect();
         let mut pos = 0;
         let mut out = String::new();
@@ -356,13 +356,13 @@ impl Lexer {
 #[derive(Clone, PartialEq)]
 pub struct Token {
     pub token: TokenKind,
-    pub contents: Arc<str>,
+    pub contents: Rc<str>,
     pub pos: usize,
     pub line: u32,
     pub col: u32,
 }
 impl Token {
-    pub fn new(lexer: &Lexer, token: TokenKind, contents: Arc<str>) -> Token {
+    pub fn new(lexer: &Lexer, token: TokenKind, contents: Rc<str>) -> Token {
         Token {
             token,
             contents,
@@ -400,8 +400,8 @@ impl Debug for TokenStream {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
-    ID(Arc<str>),
-    String(Arc<str>),
+    ID(Rc<str>),
+    String(Rc<str>),
     Punctuation(Punctuation),
     Number(Number),
     _Eof,

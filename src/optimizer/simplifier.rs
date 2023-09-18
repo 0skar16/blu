@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    hash::{Hash, Hasher}, sync::Arc,
+    hash::{Hash, Hasher}, rc::Rc,
 };
 
 use fasthash::{murmur2::Hasher32, FastHasher};
@@ -208,7 +208,7 @@ impl LuaSimplifier {
         }
         match_statement
     }
-    fn simplify_import(target: ImportTarget, src: Arc<str>) -> Statement {
+    fn simplify_import(target: ImportTarget, src: Rc<str>) -> Statement {
         match target {
             ImportTarget::Default(id) => Statement::Let(
                 vec![LetTarget::ID(id)],
@@ -244,7 +244,7 @@ impl LuaSimplifier {
         }
         let mut x = 0;
         let mut blk = Block(vec![]);
-        let mut names: HashMap<Arc<str>, Statement> = HashMap::new();
+        let mut names: HashMap<Rc<str>, Statement> = HashMap::new();
         let mut let_outputs = vec![];
         let mut hasher = Hasher32::new();
         src.hash(&mut hasher);
@@ -256,7 +256,7 @@ impl LuaSimplifier {
                     names.insert(id.clone(), Statement::Get(id));
                 }
                 LetTarget::Unwrap(targets) => {
-                    let name: Arc<str> = format!("unwrapped_{hash:x}_{x:x}").into();
+                    let name: Rc<str> = format!("unwrapped_{hash:x}_{x:x}").into();
                     let_outputs.push(name.clone());
                     for target in targets {
                         Self::resolve_unwrap_target(
@@ -300,7 +300,7 @@ impl LuaSimplifier {
     }
     fn simplify_unwrap(unwrap: Vec<UnwrapTarget>, src: Statement) -> Statement {
         let mut blk = Block(vec![]);
-        let mut names: HashMap<Arc<str>, Statement> = HashMap::new();
+        let mut names: HashMap<Rc<str>, Statement> = HashMap::new();
         for target in unwrap {
             Self::resolve_unwrap_target(target, &mut names, &mut blk, src.clone());
         }
@@ -326,7 +326,7 @@ impl LuaSimplifier {
     }
     fn resolve_unwrap_target(
         target: UnwrapTarget,
-        names: &mut HashMap<Arc<str>, Statement>,
+        names: &mut HashMap<Rc<str>, Statement>,
         blk: &mut Block,
         src: Statement,
     ) {

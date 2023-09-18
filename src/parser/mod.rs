@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, rc::Rc};
 
 use crate::lexer::{Number, Punctuation, Token, TokenKind, TokenKindDesc};
 
@@ -605,7 +605,7 @@ impl Parser {
     fn parse_unwrap(
         &mut self,
         end: usize,
-        change: &HashMap<Arc<str>, Arc<str>>,
+        change: &HashMap<Rc<str>, Rc<str>>,
     ) -> Result<Vec<UnwrapTarget>> {
         let mut entries = vec![];
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftBracket))?;
@@ -629,7 +629,7 @@ impl Parser {
     fn parse_unwrap_target(
         &mut self,
         end: usize,
-        change: &HashMap<Arc<str>, Arc<str>>,
+        change: &HashMap<Rc<str>, Rc<str>>,
     ) -> Result<UnwrapTarget> {
         let mut id = match self.eat_ex(end, TokenKindDesc::ID)?.token {
             TokenKind::ID(id) => id,

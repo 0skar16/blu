@@ -282,9 +282,9 @@ macro_rules! map_parser_err {
                 ParserError::UnexpectedTokenEx(tok, ex_tok) => format!("Parser errored:\n\tUnexpected token [{:?}:`{}`] instead of [{:?}] at {}:{}:{}", tok.token, tok.contents, ex_tok, $filename, tok.line, tok.col),
                 ParserError::UnexpectedToken(tok) => format!("Parser errored:\n\tUnexpected token [{:?}:`{}`] at {}:{}:{}", tok.token, tok.contents, $filename, tok.line, tok.col),
                 ParserError::UnexpectedTokenExKind(tok, ex_tok_kind) => format!("Parser errored:\n\tUnexpected token [{:?}:`{}`] instead of [{:?}] at {}:{}:{}", tok.token, tok.contents, ex_tok_kind, $filename, tok.line, tok.col),
-                ParserError::UnexpectedEos => format!("Parser errored:\n\tUnexpected end of Token Stream"),
-                ParserError::UnexpectedEosEx(tk) => format!("Parser errored:\n\tUnexpected end of Token Stream, expected: [{:?}]", tk),
-                ParserError::UnexpectedEosExKind(tk) => format!("Parser errored:\n\tUnexpected end of Token Stream, expected: [{:?}]", tk),
+                ParserError::UnexpectedEos(line, col) => format!("Parser errored:\n\tUnexpected end of Token Stream at {}:{line}:{col}", $filename),
+                ParserError::UnexpectedEosEx(line, col, tk) => format!("Parser errored:\n\tUnexpected end of Token Stream, expected: [{:?}] at {line}:{col}:{}", tk, $filename),
+                ParserError::UnexpectedEosExKind(line, col, tk) => format!("Parser errored:\n\tUnexpected end of Token Stream, expected: [{:?}] at {line}:{col}:{}", tk, $filename),
                 ParserError::DoubleDefaultCase(line, col) => format!("Parser errored:\n\tUnexpected double default case of a match statement: [{}:{line}:{col}]", $filename),
                 ParserError::DefaultUnreassigned(line, col) => format!("Parser errored:\n\tWhen unwrapping default you should reassigned it to another id: [{}:{line}:{col}]", $filename),
             };

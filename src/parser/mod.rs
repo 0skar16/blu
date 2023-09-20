@@ -12,9 +12,9 @@ pub enum ParserError {
     UnexpectedToken(Token),
     UnexpectedTokenEx(Token, TokenKindDesc),
     UnexpectedTokenExKind(Token, TokenKind),
-    UnexpectedEos,
-    UnexpectedEosEx(TokenKindDesc),
-    UnexpectedEosExKind(TokenKind),
+    UnexpectedEos(u32, u32),
+    UnexpectedEosEx(u32, u32, TokenKindDesc),
+    UnexpectedEosExKind(u32, u32, TokenKind),
     DoubleDefaultCase(u32, u32),
     DefaultUnreassigned(u32, u32),
 }
@@ -46,7 +46,7 @@ impl Parser {
         } else {
             self.pos = pos;
         }
-        if let Ok(call) = self.parse_call(end, true) {
+        if let Ok(call) = self.parse_call(end, true, None) {
             return Ok(call);
         } else {
             self.pos = pos;
@@ -73,9 +73,6 @@ impl Parser {
 
     pub fn parse_statement(&mut self, end: usize) -> Result<Statement> {
         let tok = self.peek(0, end)?;
-
-        let pos = self.pos;
-        let mut buf = vec![];
         if tok.token == TokenKind::Punctuation(Punctuation::Not) {
             self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Not))?;
             let st = self.parse_statement(end)?;
@@ -86,40 +83,7 @@ impl Parser {
             let st = self.parse_statement(end)?;
             return Ok(Statement::Operation(Box::new(st), Operation::Len, None));
         }
-        if let Ok(op) = self.parse_operation(end) {
-            buf.push((self.pos, op));
-        }
-        self.pos = pos;
-        if let Ok(call) = self.parse_call(end, false) {
-            buf.push((self.pos, call));
-        }
-        self.pos = pos;
-        if let Ok(index) = self.parse_index(end) {
-            buf.push((self.pos, index))
-        }
-        self.pos = pos;
-        if let Ok(child) = self.parse_child(end) {
-            buf.push((self.pos, child));
-        }
-        self.pos = pos;
-        if let Ok(method) = self.parse_method(end) {
-            buf.push((self.pos, method));
-        }
-        self.pos = pos;
-        let mut d = None;
-        for (pos, stmt) in buf {
-            if let Some((_pos, _)) = &d {
-                if pos <= *_pos {
-                    continue;
-                }
-            }
-            d = Some((pos, stmt));
-        }
-        if let Some((pos, stmt)) = d {
-            self.pos = pos;
-            return Ok(stmt);
-        }
-        Ok(match &tok.token {
+        let mut stmt = match &tok.token {
             TokenKind::ID(id) => match &(**id) {
                 "fn" => self.parse_function(end, false)?,
                 "nil" | "nul" | "null" | "none" => Statement::Nil,
@@ -158,7 +122,31 @@ impl Parser {
             _ => {
                 return Err(ParserError::UnexpectedToken(tok));
             }
-        })
+        };
+        loop {
+            if let Ok(tok) = self.peek(0, end) {
+                stmt = match tok.token {
+                    TokenKind::Punctuation(p) => if p.is_operation() && !( p == Punctuation::Dot && !self.peek(1, end).map(|t| t.token == TokenKind::Punctuation(Punctuation::Dot)).unwrap_or(false) ) {
+                        if p == Punctuation::Equals && let Ok(tok) = self.peek(1, end) && tok.token != TokenKind::Punctuation(Punctuation::Equals) {
+                            break
+                        }
+                        self.parse_operation(end, stmt)?
+                    }else{
+                        match p {
+                            Punctuation::LeftParen => self.parse_call(end, false, Some(stmt))?,
+                            Punctuation::LeftSBracket => self.parse_index(end, stmt)?,
+                            Punctuation::Dot => self.parse_child(end, stmt)?,
+                            Punctuation::Colon => self.parse_method(end, stmt)?,
+                            _ => break,
+                        }
+                    },
+                    _ => break,
+                }
+            }else{
+                break
+            }
+        }
+        Ok(stmt)
     }
 
     fn parse_loopop(&mut self, end: usize) -> Result<Statement> {
@@ -221,10 +209,7 @@ impl Parser {
             _ => return Err(ParserError::UnexpectedToken(self.peek(0, end)?)),
         })
     }
-    fn parse_index(&mut self, end: usize) -> Result<Statement> {
-        let _end =
-            self.to_last_minding_blocks(end, TokenKind::Punctuation(Punctuation::LeftSBracket))?;
-        let indexed = self.parse_statement(_end)?;
+    fn parse_index(&mut self, end: usize, indexed: Statement) -> Result<Statement> {
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftSBracket))?;
         let _end = self.isolate_block(end)?;
         let index = self.parse_statement(_end)?;
@@ -350,63 +335,7 @@ impl Parser {
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightBracket))?;
         Ok(Statement::Table(entries))
     }
-    fn parse_operation(&mut self, end: usize) -> Result<Statement> {
-        let mut _end = self.pos;
-        let mut o = 0;
-        let mut i = 0;
-        let mut pr = 0;
-        loop {
-            if _end >= end || self.pos + o >= end {
-                break;
-            }
-            let tok = self.peek(o, end)?;
-            if i == 0 {
-                match tok.token {
-                    TokenKind::Punctuation(p) => if p.is_operation() {
-                        if p == Punctuation::And || p == Punctuation::Or {
-                            _end = self.pos+o;
-                            pr += 1;
-                        }
-                        if p == Punctuation::Not && pr < 1 {
-                            if self.peek(o+1, end)?.token == TokenKind::Punctuation(Punctuation::Equals) {
-                                _end = self.pos+o;
-                            }else{
-                                o +=1;
-                                continue;
-                            }
-                        }
-                        if pr < 1 {
-                            _end = self.pos+o;
-                        }
-                    }else if p == Punctuation::Dot && let Ok(p2) = self.peek(i+1, end) && p2.token == TokenKind::Punctuation(Punctuation::Dot) && pr < 1 {
-                        o+=1;
-                        _end = self.pos+o;
-                    }
-                    _ => {},
-                }
-            }
-            if TokenKindDesc::Punctuation == tok.token {
-                match tok.token {
-                    TokenKind::Punctuation(punct) => match punct {
-                        Punctuation::LeftBracket => i += 1,
-                        Punctuation::RightBracket => i -= 1,
-                        Punctuation::LeftSBracket => i += 1,
-                        Punctuation::RightSBracket => i -= 1,
-                        Punctuation::LeftParen => i += 1,
-                        Punctuation::RightParen => i -= 1,
-                        _ => {}
-                    },
-                    _ => {}
-                }
-            }
-
-            o += 1;
-        }
-
-        if _end == end || _end - self.pos <= 0 {
-            return Err(ParserError::UnexpectedEos);
-        }
-        let operand = self.parse_statement(_end)?;
+    fn parse_operation(&mut self, end: usize, operand: Statement) -> Result<Statement> {
         let op = self.eat_ex(end, TokenKindDesc::Punctuation)?;
         let op = match op.token {
             TokenKind::Punctuation(punct) => match punct {
@@ -459,15 +388,13 @@ impl Parser {
             Some(Box::new(operator)),
         ))
     }
-    fn parse_call(&mut self, end: usize, standalone: bool) -> Result<Statement> {
-        let _end = if standalone {
-            self.to_first_minding_blocks(end, TokenKind::Punctuation(Punctuation::Semicolon))?
+    fn parse_call(&mut self, end: usize, standalone: bool, called: Option<Statement>) -> Result<Statement> {
+        let called = if let Some(called) = called {
+            called
         } else {
-            end
+            let _end = self.to_first(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
+            self.parse_statement(_end)?
         };
-        let _end =
-            self.to_last_minding_blocks(_end, TokenKind::Punctuation(Punctuation::LeftParen))?;
-        let called = self.parse_statement(_end)?;
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
         let _end = self.isolate_block(end)?;
         let mut args = vec![];
@@ -488,27 +415,21 @@ impl Parser {
         }
         Ok(Statement::Call(Box::new(called), args, standalone))
     }
-    fn parse_child(&mut self, end: usize) -> Result<Statement> {
-        let _end = self.to_last_minding_blocks(end, TokenKind::Punctuation(Punctuation::Dot))?;
-        if _end == end {
-            return Err(ParserError::UnexpectedEos);
-        }
-        let parent = self.parse_statement(_end)?;
+    fn parse_child(&mut self, end: usize, parent: Statement) -> Result<Statement> {
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Dot))?;
-        let child;
         let id = self.eat_ex(end, TokenKindDesc::ID)?;
-        match id.token {
-            TokenKind::ID(id) => child = Statement::Get(id),
+        let child = match id.token {
+            TokenKind::ID(id) => Statement::Get(id),
             _ => unreachable!(),
-        }
+        };
         Ok(Statement::Child(Box::new(parent), Box::new(child)))
     }
     fn parse_slice(&mut self, end: usize) -> Result<Statement> {
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftSBracket))?;
-        let __end = self.isolate_block(end)?;
+        let _end = self.isolate_block(end)?;
         let mut elements = vec![];
         loop {
-            let _end = self.to_first(__end, TokenKind::Punctuation(Punctuation::Comma))?;
+            let _end = self.to_first_minding_blocks(_end, TokenKind::Punctuation(Punctuation::Comma))?;
             if _end - self.pos <= 0 {
                 break;
             }
@@ -523,39 +444,28 @@ impl Parser {
     }
     fn parse_function(&mut self, end: usize, standalone: bool) -> Result<Statement> {
         self.eat_ex_kind(end, TokenKind::ID("fn".into()))?;
-        let name;
-        let _end = self.to_first(end, TokenKind::Punctuation(Punctuation::LeftBracket))?;
-        let _end = self.to_last(_end, TokenKind::Punctuation(Punctuation::LeftParen))?;
-        if !standalone {
-            name = if let Ok(method) = self.parse_method(_end) {
-                Some(Box::new(method))
-            } else if let Ok(child) = self.parse_child(_end) {
-                Some(Box::new(child))
-            } else if let Ok(tk) = self.eat_ex(end, TokenKindDesc::ID) {
-                if let TokenKind::ID(id) = tk.token {
-                    Some(Box::new(Statement::Get(id)))
-                } else {
-                    unreachable!()
-                }
-            } else {
+        let _end = self.to_first(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
+        let name = if !standalone {
+            if let Ok(stmt) = self.parse_statement(_end) {match stmt {
+                
+                Statement::Child(parent, child) => Some(Statement::Child(parent, child)),
+                Statement::Method(parent, child) => Some(Statement::Method(parent, child)),
+                Statement::Get(id) => Some(Statement::Get(id)),
+                _ => None,
+            }}else{
                 None
             }
         } else {
             let tk = self.peek(0, end)?;
-            name = if let Ok(method) = self.parse_method(_end) {
-                Some(Box::new(method))
-            } else if let Ok(child) = self.parse_child(_end) {
-                Some(Box::new(child))
-            } else if let Ok(tk) = self.eat_ex(end, TokenKindDesc::ID) {
-                if let TokenKind::ID(id) = tk.token {
-                    Some(Box::new(Statement::Get(id)))
-                } else {
-                    unreachable!()
-                }
-            } else {
-                return Err(ParserError::UnexpectedToken(tk));
+            match self.parse_statement(_end)? {
+                
+                Statement::Child(parent, child) => Some(Statement::Child(parent, child)),
+                Statement::Method(parent, child) => Some(Statement::Method(parent, child)),
+                Statement::Get(id) => Some(Statement::Get(id)),
+                _ => return Err(ParserError::UnexpectedToken(tk)),
             }
-        }
+        };
+        let name = name.map(|name| Box::new(name));
 
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
         let mut args = vec![];
@@ -589,9 +499,7 @@ impl Parser {
         let block = self.parse_block(end)?;
         Ok(Statement::Function(name, args, block, standalone))
     }
-    fn parse_method(&mut self, end: usize) -> Result<Statement> {
-        let _end = self.to_last_minding_blocks(end, TokenKind::Punctuation(Punctuation::Colon))?;
-        let parent = self.parse_statement(_end)?;
+    fn parse_method(&mut self, end: usize, parent: Statement) -> Result<Statement> {
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Colon))?;
         if let TokenKind::ID(id) = self.eat_ex(end, TokenKindDesc::ID)?.token {
             return Ok(Statement::Method(Box::new(parent), id));
@@ -626,7 +534,7 @@ impl Parser {
         let assignment = {
             if let Ok(t) = self.peek(0, end) && t.token == TokenKind::Punctuation(Punctuation::Equals) {
                 self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Equals))?;
-                let end = self.to_first(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
+                let end = self.to_first_minding_blocks(end, TokenKind::Punctuation(Punctuation::Semicolon))?;
                 let statement = self.parse_statement(end)?;
                 Some(Box::new(statement))
             }else{
@@ -825,7 +733,7 @@ impl Parser {
             self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Comma))?;
         }
         if indexors.len() < 1 {
-            return Err(ParserError::UnexpectedEos);
+            self.peek(0, 0)?;
         }
         let tk = self.peek(0, end)?.token;
         let iterator = if tk == TokenKind::ID("in".into()) {
@@ -1020,7 +928,7 @@ impl Parser {
             if end >= _end || self.pos + o >= _end {
                 break;
             }
-            let tok = self.peek(o, _end)?;
+            let tok = self.peek(o as isize, _end)?;
             if tok.token == _tok {
                 end = self.pos + o;
             }
@@ -1036,7 +944,7 @@ impl Parser {
             if end >= _end || self.pos + o >= _end {
                 break;
             }
-            let tok = self.peek(o, _end)?;
+            let tok = self.peek(o as isize, _end)?;
             if tok.token == _tok && i == 0 {
                 end = self.pos + o;
             }
@@ -1089,8 +997,8 @@ impl Parser {
     }
 
     fn eat(&mut self, end: usize) -> Result<Token> {
-        if end - self.pos <= 0 {
-            return Err(ParserError::UnexpectedEos);
+        if end < self.pos || end - self.pos <= 0 {
+            self.peek(0, self.token_stream.len())?;
         }
         self.pos += 1;
         Ok(self.token_stream[self.pos - 1].clone())
@@ -1112,11 +1020,12 @@ impl Parser {
         Ok(token)
     }
 
-    fn peek(&mut self, offset: usize, end: usize) -> Result<Token> {
-        if end - self.pos <= 0 {
-            return Err(ParserError::UnexpectedEos);
+    fn peek(&mut self, offset: isize, end: usize) -> Result<Token> {
+        if end as isize - (self.pos as isize + offset) <= 0 {
+            let tk = self.peek(offset-1, self.token_stream.len())?;
+            return Err(ParserError::UnexpectedEos(tk.line, tk.col));
         }
-        Ok(self.token_stream[self.pos + offset].clone())
+        Ok(self.token_stream[(self.pos as isize + offset) as usize].clone())
     }
 }
 #[macro_export]

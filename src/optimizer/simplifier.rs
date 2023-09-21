@@ -97,7 +97,11 @@ impl LuaSimplifier {
                     .collect(),
             ),
             Statement::Let(targets, types, src) => Self::simplify_let(targets, types, src),
-            Statement::Global(names, types, src) => Statement::Global(names, types, src.map(|src| Box::new(Self::simplify_statement(*src)))),
+            Statement::Global(names, types, src) => Statement::Global(
+                names,
+                types,
+                src.map(|src| Box::new(Self::simplify_statement(*src))),
+            ),
             Statement::Import(target, src) => Self::simplify_import(target, src),
             st => st,
         }
@@ -233,7 +237,11 @@ impl LuaSimplifier {
             ),
         }
     }
-    fn simplify_let(targets: Vec<LetTarget>, types: Vec<Type>, src: Option<Box<Statement>>) -> Statement {
+    fn simplify_let(
+        targets: Vec<LetTarget>,
+        types: Vec<Type>,
+        src: Option<Box<Statement>>,
+    ) -> Statement {
         if targets
             .iter()
             .find(|t| match t {
@@ -278,7 +286,7 @@ impl LuaSimplifier {
                 .into_iter()
                 .map(|name| LetTarget::ID(name))
                 .collect(),
-            vec![0u8;len].into_iter().map(|_| Type::Any).collect(),
+            vec![0u8; len].into_iter().map(|_| Type::Any).collect(),
             src,
         )]);
         _blk.extend(blk.0);
@@ -290,7 +298,10 @@ impl LuaSimplifier {
                 .keys()
                 .map(|name| LetTarget::ID(name.clone()))
                 .collect(),
-            vec![0u8;names.len()].into_iter().map(|_| Type::Any).collect(),
+            vec![0u8; names.len()]
+                .into_iter()
+                .map(|_| Type::Any)
+                .collect(),
             Some(Box::new(Statement::Call(
                 Box::new(Statement::Paren(Box::new(Statement::Function(
                     None,
@@ -317,7 +328,10 @@ impl LuaSimplifier {
                 .keys()
                 .map(|name| LetTarget::ID(name.clone()))
                 .collect(),
-            vec![0u8;names.len()].into_iter().map(|_| Type::Any).collect(),
+            vec![0u8; names.len()]
+                .into_iter()
+                .map(|_| Type::Any)
+                .collect(),
             Some(Box::new(Statement::Call(
                 Box::new(Statement::Paren(Box::new(Statement::Function(
                     None,

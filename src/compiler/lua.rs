@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{
     parse,
-    parser::ast::{BluIterator, LetTarget, LoopOp, Operation, Statement, TableIndex, AST, Type},
+    parser::ast::{BluIterator, LetTarget, LoopOp, Operation, Statement, TableIndex, Type, AST},
 };
 
 pub fn compile(ast: AST) -> String {

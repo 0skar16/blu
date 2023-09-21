@@ -1,8 +1,9 @@
 use crate::{throw_unexpected_char, try_next_char};
 use std::{
     fmt::{Debug, Write},
+    ops::Range,
     rc::Rc,
-    str::Chars, ops::Range,
+    str::Chars,
 };
 #[derive(Debug, Clone, PartialEq)]
 pub enum LexerError {
@@ -330,7 +331,7 @@ impl Token {
     pub fn new(lexer: &Lexer, token: TokenKind, contents: Rc<str>) -> Token {
         Token {
             token,
-            pos: lexer.pos..lexer.pos+contents.len(),
+            pos: lexer.pos..lexer.pos + contents.len(),
             contents,
             line: lexer.line,
             col: lexer.col,

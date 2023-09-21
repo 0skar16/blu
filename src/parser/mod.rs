@@ -4,7 +4,7 @@ use crate::lexer::{Number, Punctuation, Token, TokenKind, TokenKindDesc};
 
 use self::ast::{
     Block, BluIterator, ImportTarget, LetTarget, Literal, LoopOp, MatchOutput, Operation,
-    Statement, TableIndex, UnwrapTarget, AST, Type,
+    Statement, TableIndex, Type, UnwrapTarget, AST,
 };
 pub mod ast;
 #[derive(Debug, Clone, PartialEq)]
@@ -126,24 +126,34 @@ impl Parser {
         loop {
             if let Ok(tok) = self.peek(0, end) {
                 stmt = match tok.token {
-                    TokenKind::Punctuation(p) => if p.is_operation() && !( p == Punctuation::Dot && !self.peek(1, end).map(|t| t.token == TokenKind::Punctuation(Punctuation::Dot)).unwrap_or(false) ) {
-                        if p == Punctuation::Equals && let Ok(tok) = self.peek(1, end) && tok.token != TokenKind::Punctuation(Punctuation::Equals) {
+                    TokenKind::Punctuation(p) => {
+                        if p.is_operation()
+                            && !(p == Punctuation::Dot
+                                && !self
+                                    .peek(1, end)
+                                    .map(|t| t.token == TokenKind::Punctuation(Punctuation::Dot))
+                                    .unwrap_or(false))
+                        {
+                            if p == Punctuation::Equals && let Ok(tok) = self.peek(1, end) && tok.token != TokenKind::Punctuation(Punctuation::Equals) {
                             break
                         }
-                        self.parse_operation(end, stmt)?
-                    }else{
-                        match p {
-                            Punctuation::LeftParen => self.parse_call(end, false, Some(stmt))?,
-                            Punctuation::LeftSBracket => self.parse_index(end, stmt)?,
-                            Punctuation::Dot => self.parse_child(end, stmt)?,
-                            Punctuation::Colon => self.parse_method(end, stmt)?,
-                            _ => break,
+                            self.parse_operation(end, stmt)?
+                        } else {
+                            match p {
+                                Punctuation::LeftParen => {
+                                    self.parse_call(end, false, Some(stmt))?
+                                }
+                                Punctuation::LeftSBracket => self.parse_index(end, stmt)?,
+                                Punctuation::Dot => self.parse_child(end, stmt)?,
+                                Punctuation::Colon => self.parse_method(end, stmt)?,
+                                _ => break,
+                            }
                         }
-                    },
+                    }
                     _ => break,
                 }
-            }else{
-                break
+            } else {
+                break;
             }
         }
         Ok(stmt)
@@ -224,24 +234,22 @@ impl Parser {
                 let _type = self.parse_type(_end)?;
                 self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightSBracket))?;
                 Type::Array(Rc::new(_type))
-            },
-            TokenKind::ID(id) => {
-                match &(*id) {
-                    "any" => Type::Any,
-                    "str" => Type::Str,
-                    "f32" => Type::F32,
-                    "f64" => Type::F64,
-                    "i8" => Type::I8,
-                    "i16" => Type::I16,
-                    "i32" => Type::I32,
-                    "i64" => Type::I64,
-                    "u8" => Type::U8,
-                    "u16" => Type::U16,
-                    "u32" => Type::U32,
-                    "u64" => Type::U64,
-                    _ => Type::Custom(id),
-                }
             }
+            TokenKind::ID(id) => match &(*id) {
+                "any" => Type::Any,
+                "str" => Type::Str,
+                "f32" => Type::F32,
+                "f64" => Type::F64,
+                "i8" => Type::I8,
+                "i16" => Type::I16,
+                "i32" => Type::I32,
+                "i64" => Type::I64,
+                "u8" => Type::U8,
+                "u16" => Type::U16,
+                "u32" => Type::U32,
+                "u64" => Type::U64,
+                _ => Type::Custom(id),
+            },
             _ => return Err(ParserError::UnexpectedToken(tok)),
         })
     }
@@ -265,10 +273,12 @@ impl Parser {
                 if i != 0 {
                     self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Comma))?;
                 }
-                let _end = self.to_first(end, TokenKind::Punctuation(Punctuation::Comma)).unwrap_or(end);
+                let _end = self
+                    .to_first(end, TokenKind::Punctuation(Punctuation::Comma))
+                    .unwrap_or(end);
                 types.push(self.parse_type(_end)?);
             }
-        }else{
+        } else {
             for _ in 0..ids.len() {
                 types.push(Type::Any);
             }
@@ -388,7 +398,12 @@ impl Parser {
             Some(Box::new(operator)),
         ))
     }
-    fn parse_call(&mut self, end: usize, standalone: bool, called: Option<Statement>) -> Result<Statement> {
+    fn parse_call(
+        &mut self,
+        end: usize,
+        standalone: bool,
+        called: Option<Statement>,
+    ) -> Result<Statement> {
         let called = if let Some(called) = called {
             called
         } else {
@@ -429,7 +444,8 @@ impl Parser {
         let _end = self.isolate_block(end)?;
         let mut elements = vec![];
         loop {
-            let _end = self.to_first_minding_blocks(_end, TokenKind::Punctuation(Punctuation::Comma))?;
+            let _end =
+                self.to_first_minding_blocks(_end, TokenKind::Punctuation(Punctuation::Comma))?;
             if _end - self.pos <= 0 {
                 break;
             }
@@ -446,19 +462,19 @@ impl Parser {
         self.eat_ex_kind(end, TokenKind::ID("fn".into()))?;
         let _end = self.to_first(end, TokenKind::Punctuation(Punctuation::LeftParen))?;
         let name = if !standalone {
-            if let Ok(stmt) = self.parse_statement(_end) {match stmt {
-                
-                Statement::Child(parent, child) => Some(Statement::Child(parent, child)),
-                Statement::Method(parent, child) => Some(Statement::Method(parent, child)),
-                Statement::Get(id) => Some(Statement::Get(id)),
-                _ => None,
-            }}else{
+            if let Ok(stmt) = self.parse_statement(_end) {
+                match stmt {
+                    Statement::Child(parent, child) => Some(Statement::Child(parent, child)),
+                    Statement::Method(parent, child) => Some(Statement::Method(parent, child)),
+                    Statement::Get(id) => Some(Statement::Get(id)),
+                    _ => None,
+                }
+            } else {
                 None
             }
         } else {
             let tk = self.peek(0, end)?;
             match self.parse_statement(_end)? {
-                
                 Statement::Child(parent, child) => Some(Statement::Child(parent, child)),
                 Statement::Method(parent, child) => Some(Statement::Method(parent, child)),
                 Statement::Get(id) => Some(Statement::Get(id)),
@@ -484,7 +500,9 @@ impl Parser {
             let mut _type = Type::Any;
             if self.peek(0, end)?.token == TokenKind::Punctuation(Punctuation::Colon) {
                 self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Colon))?;
-                let _end = self.to_first(end, TokenKind::Punctuation(Punctuation::Comma)).unwrap_or(end);
+                let _end = self
+                    .to_first(end, TokenKind::Punctuation(Punctuation::Comma))
+                    .unwrap_or(end);
                 _type = self.parse_type(_end)?;
             }
             args.push((arg, _type));
@@ -523,10 +541,12 @@ impl Parser {
                 if i != 0 {
                     self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Comma))?;
                 }
-                let _end = self.to_first(end, TokenKind::Punctuation(Punctuation::Comma)).unwrap_or(end);
+                let _end = self
+                    .to_first(end, TokenKind::Punctuation(Punctuation::Comma))
+                    .unwrap_or(end);
                 types.push(self.parse_type(_end)?);
             }
-        }else{
+        } else {
             for _ in 0..targets.len() {
                 types.push(Type::Any);
             }
@@ -1022,7 +1042,7 @@ impl Parser {
 
     fn peek(&mut self, offset: isize, end: usize) -> Result<Token> {
         if end as isize - (self.pos as isize + offset) <= 0 {
-            let tk = self.peek(offset-1, self.token_stream.len())?;
+            let tk = self.peek(offset - 1, self.token_stream.len())?;
             return Err(ParserError::UnexpectedEos(tk.line, tk.col));
         }
         Ok(self.token_stream[(self.pos as isize + offset) as usize].clone())

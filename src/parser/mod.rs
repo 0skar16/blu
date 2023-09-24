@@ -21,14 +21,14 @@ pub enum ParserError {
 pub type Result<T> = std::result::Result<T, ParserError>;
 pub struct Parser {
     pos: usize,
-    token_stream: Vec<Token>,
+    token_stream: Rc<[Token]>,
 }
 
 impl Parser {
-    pub fn new(token_stream: Vec<Token>) -> Self {
+    pub fn new(token_stream: impl Into<Rc<[Token]>>) -> Self {
         Self {
             pos: 0,
-            token_stream,
+            token_stream: token_stream.into(),
         }
     }
     pub fn parse(mut self) -> Result<AST> {

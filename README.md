@@ -1,7 +1,7 @@
 # blu
  Better Lua
  
-Like bro, I know it isn't much, but it's better than that gremlin of a syntax that lua has so, yeah, it's better!
+Like bro, I know it isn't much, but it's better than that gremlin of a syntax that Lua has so, yeah, it's better!
 
 We got it fast!
 

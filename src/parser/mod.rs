@@ -345,7 +345,51 @@ impl Parser {
         self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::RightBracket))?;
         Ok(Statement::Table(entries))
     }
-    fn parse_operation(&mut self, end: usize, operand: Statement) -> Result<Statement> {
+    fn parse_operation(&mut self, end: usize, mut operand: Statement) -> Result<Statement> {
+        let mut mul_end =
+            self.to_first_minding_blocks(end, TokenKind::Punctuation(Punctuation::Mul))?;
+
+        let div_end =
+            self.to_first_minding_blocks(end, TokenKind::Punctuation(Punctuation::Div))?;
+        if div_end != self.pos && div_end < end {
+            if mul_end != self.pos {
+                mul_end = mul_end.min(div_end);
+            } else {
+                mul_end = div_end;
+            }
+        }
+
+        let mod_end =
+            self.to_first_minding_blocks(end, TokenKind::Punctuation(Punctuation::Mod))?;
+        if mod_end != self.pos && mod_end < end {
+            if mul_end != self.pos {
+                mul_end = mul_end.min(mod_end);
+            } else {
+                mul_end = mod_end;
+            }
+        }
+
+        if mul_end != self.pos && mul_end < end {
+            operand = self.parse_operation(mul_end, operand)?;
+        }
+
+        let mut add_end =
+            self.to_first_minding_blocks(end, TokenKind::Punctuation(Punctuation::Plus))?;
+
+        let sub_end =
+            self.to_first_minding_blocks(end, TokenKind::Punctuation(Punctuation::Sub))?;
+        if sub_end != self.pos && sub_end < end {
+            if add_end != self.pos {
+                add_end = add_end.min(sub_end);
+            } else {
+                add_end = sub_end;
+            }
+        }
+
+        if add_end != self.pos && add_end < end {
+            operand = self.parse_operation(add_end, operand)?;
+        }
+
         let op = self.eat_ex(end, TokenKindDesc::Punctuation)?;
         let op = match op.token {
             TokenKind::Punctuation(punct) => match punct {
@@ -355,12 +399,12 @@ impl Parser {
                 }
                 Punctuation::Mod => Operation::Mod,
                 Punctuation::Mul => Operation::Mul,
-                Punctuation::And => Operation::And,
-                Punctuation::Or => Operation::Or,
                 Punctuation::Sub => Operation::Sub,
                 Punctuation::Div => Operation::Div,
                 Punctuation::Plus => Operation::Add,
                 Punctuation::Exp => Operation::Exp,
+                Punctuation::And => Operation::And,
+                Punctuation::Or => Operation::Or,
                 Punctuation::Not => {
                     self.eat_ex_kind(end, TokenKind::Punctuation(Punctuation::Equals))?;
                     Operation::NotEqual

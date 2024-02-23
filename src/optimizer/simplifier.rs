@@ -243,7 +243,6 @@ impl LuaSimplifier {
         src: Option<Box<Statement>>,
     ) -> Statement {
         let src = if let Some(src) = src {
-            dbg!(&*src);
             Some(Box::new(Self::simplify_statement(*src)))
         }else{
             None

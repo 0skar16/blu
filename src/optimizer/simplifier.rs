@@ -242,6 +242,12 @@ impl LuaSimplifier {
         types: Vec<Type>,
         src: Option<Box<Statement>>,
     ) -> Statement {
+        let src = if let Some(src) = src {
+            dbg!(&*src);
+            Some(Box::new(Self::simplify_statement(*src)))
+        }else{
+            None
+        };
         if targets
             .iter()
             .find(|t| match t {
@@ -280,11 +286,6 @@ impl LuaSimplifier {
                 }
             }
         }
-        let src = if let Some(src) = src {
-            Some(Box::new(Self::simplify_statement(*src)))
-        }else{
-            None
-        };
         let len = let_outputs.len();
         let mut _blk = Block(vec![Statement::Let(
             let_outputs

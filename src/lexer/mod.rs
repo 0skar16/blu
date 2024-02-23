@@ -344,6 +344,7 @@ impl Debug for Token {
     }
 }
 pub(crate) struct TokenStream(Vec<Token>);
+#[allow(dead_code)]
 pub(crate) trait ToTokenStream {
     fn to_token_stream(self) -> TokenStream;
 }

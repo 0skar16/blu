@@ -89,7 +89,7 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
                     Operation::And => "and",
                     Operation::Or => "or",
                     Operation::Equal => "==",
-                    Operation::NotEqual => "!=",
+                    Operation::NotEqual => "~=",
                     Operation::Greater => ">",
                     Operation::Lesser => "<",
                     Operation::GE => ">=",

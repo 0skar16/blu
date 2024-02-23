@@ -86,9 +86,12 @@ impl Parser {
         let mut stmt = match &tok.token {
             TokenKind::ID(id) => match &(**id) {
                 "fn" => self.parse_function(end, false)?,
-                "nil" | "nul" | "null" | "none" => Statement::Nil,
                 "match" => self.parse_match(end, false)?,
                 "false" | "true" => self.parse_literal(end)?,
+                "nil" | "nul" | "null" | "none" => {
+                    self.eat_ex(end, TokenKindDesc::ID)?;
+                    Statement::Nil
+                },
                 _ => {
                     self.eat_ex(end, TokenKindDesc::ID)?;
                     Statement::Get(id.clone())
@@ -213,7 +216,7 @@ impl Parser {
                 "false" => {
                     self.eat_ex(end, TokenKindDesc::ID)?;
                     Statement::Literal(Literal::Boolean(false))
-                }
+                },
                 _ => return Err(ParserError::UnexpectedToken(self.peek(0, end)?)),
             },
             _ => return Err(ParserError::UnexpectedToken(self.peek(0, end)?)),
@@ -458,7 +461,7 @@ impl Parser {
         let _end = self.isolate_block(end)?;
         let mut args = vec![];
         loop {
-            let _end = self.to_first(_end, TokenKind::Punctuation(Punctuation::Comma))?;
+            let _end = self.to_first_minding_blocks(_end, TokenKind::Punctuation(Punctuation::Comma))?;
             if _end - self.pos <= 0 {
                 break;
             }

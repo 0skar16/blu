@@ -262,7 +262,7 @@ fn to_lua(statement: Statement, ind: u8, do_ind: bool) -> String {
             buf.push_str(&to_lua(*indexer, ind, false));
             buf.push(']');
         }
-        Statement::Nil => buf.push_str("nil"),
+        Statement::Null => buf.push_str("nil"),
         Statement::Loop(stmt, block) => {
             buf.push_str("repeat\n");
             for stmt in block.0 {

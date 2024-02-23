@@ -90,7 +90,7 @@ impl Parser {
                 "false" | "true" => self.parse_literal(end)?,
                 "nil" | "nul" | "null" | "none" => {
                     self.eat_ex(end, TokenKindDesc::ID)?;
-                    Statement::Nil
+                    Statement::Null
                 },
                 _ => {
                     self.eat_ex(end, TokenKindDesc::ID)?;

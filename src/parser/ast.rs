@@ -43,7 +43,7 @@ pub enum Statement {
         Option<MatchOutput>,
         bool,
     ),
-    Nil,
+    Null,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

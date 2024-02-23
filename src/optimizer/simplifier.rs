@@ -280,6 +280,11 @@ impl LuaSimplifier {
                 }
             }
         }
+        let src = if let Some(src) = src {
+            Some(Box::new(Self::simplify_statement(*src)))
+        }else{
+            None
+        };
         let len = let_outputs.len();
         let mut _blk = Block(vec![Statement::Let(
             let_outputs
